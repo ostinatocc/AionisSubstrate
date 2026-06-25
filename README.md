@@ -62,6 +62,8 @@ Runtime snapshot import is documented in [docs/RUNTIME_SNAPSHOT_IMPORT.md](docs/
 
 Runtime reference corpus parity is documented in [docs/RUNTIME_REFERENCE_CORPUS.md](docs/RUNTIME_REFERENCE_CORPUS.md).
 
+External admission parity is documented in [docs/EXTERNAL_ADMISSION_PARITY.md](docs/EXTERNAL_ADMISSION_PARITY.md).
+
 ## Quick Test
 
 ```bash
@@ -129,6 +131,15 @@ npm run check:runtime-reference-corpus -- \
 ```
 
 This scans Runtime `agent_context` / `memory_decision_trace` JSON and only counts a reference when its memory ids overlap a real Runtime SQLite scope. Unmatched demo/export files are reported separately.
+
+External admission parity against focused Runtime:
+
+```bash
+npm run check:external-admission-parity -- \
+  --runtime-root /path/to/AionisRuntime-focused
+```
+
+This starts focused Runtime with isolated Lite SQLite paths, calls the real external memory governance route, projects the same candidate memories into Substrate, and compares `use_now`, `inspect_before_use`, `do_not_use`, and `rehydrate`.
 
 ## Development Checks
 
