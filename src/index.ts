@@ -2,6 +2,19 @@ export * from "./types.ts";
 export { openFileAionisSubstrate, type FileAionisSubstrateOptions } from "./file-substrate.ts";
 export { openSqliteAionisSubstrate, type SqliteAionisSubstrateOptions } from "./sqlite-substrate.ts";
 export {
+  AIONIS_SUBSTRATE_BACKUP_FORMAT,
+  AIONIS_SUBSTRATE_BACKUP_VERSION,
+  exportAionisSubstrateBackup,
+  readAionisSubstrateBackupFile,
+  restoreAionisSubstrateBackupToFile,
+  restoreAionisSubstrateBackupToSqlite,
+  verifyAionisSubstrateBackup,
+  writeAionisSubstrateBackupFile,
+  type AionisSubstrateBackup,
+  type AionisSubstrateBackupIntegrityReport,
+  type RestoreAionisSubstrateBackupOptions,
+} from "./backup.ts";
+export {
   importRuntimeLiteSnapshot,
   type RuntimeSnapshotImportOptions,
   type RuntimeSnapshotImportSummary,

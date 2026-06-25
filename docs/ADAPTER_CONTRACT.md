@@ -82,6 +82,21 @@ The contract benchmark checks file/SQLite parity for the same governed scenarios
 
 This is intentional: exported context must leave a receipt. If a caller needs a side-effect-free preview, the API should add a separate preview method instead of weakening `compileContext`.
 
+### 8. Backup and Restore Integrity
+
+Backup export must operate over the append-only event log, not only over derived read-model tables or snapshots.
+
+Restore must verify:
+
+- supported backup and schema version;
+- contiguous event sequence;
+- duplicate event ids;
+- event reference integrity;
+- header event counts;
+- SHA-256 checksum.
+
+File and SQLite restore targets must reject non-empty destinations unless explicit overwrite is requested.
+
 ## Current Negative Controls
 
 The test suite currently checks:
@@ -97,6 +112,7 @@ The test suite currently checks:
 - concurrent writes are serialized with contiguous event sequences;
 - store schema version is reported by both adapters;
 - SQLite schema metadata is persisted and future unsupported schemas are rejected;
+- event-log backups verify checksums and restore to file and SQLite stores;
 - Runtime snapshot import opens source SQLite read-only.
 
 ## Non-Goals

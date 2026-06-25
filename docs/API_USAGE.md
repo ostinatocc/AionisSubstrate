@@ -135,6 +135,27 @@ The compiled context has four surfaces:
 
 `compileContext` records a `memory.decision.recorded` event. It is intentionally auditable, not a pure read.
 
+## Export, Verify, and Restore
+
+```ts
+import {
+  exportAionisSubstrateBackup,
+  restoreAionisSubstrateBackupToSqlite,
+  verifyAionisSubstrateBackup,
+  writeAionisSubstrateBackupFile,
+} from "@aionis/substrate";
+
+const backup = await exportAionisSubstrateBackup(store);
+const report = verifyAionisSubstrateBackup(backup);
+
+if (!report.ok) throw new Error(report.errors.join("; "));
+
+await writeAionisSubstrateBackupFile("/backups/aionis-substrate.json", backup);
+await restoreAionisSubstrateBackupToSqlite(backup, "/tmp/restored-aionis-substrate.sqlite");
+```
+
+Backup is event-log based. Restore preserves original event ids and sequence numbers, then rebuilds the read model.
+
 ## Close the Store
 
 ```ts

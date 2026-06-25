@@ -39,6 +39,14 @@ The SQLite adapter persists schema metadata in `substrate_metadata` and mirrors 
 
 The file adapter writes the same schema version into `snapshot.json`. The append-only event log remains the durable evidence source; the snapshot schema is the derived read-model format.
 
+### Backup Boundary
+
+Backups export the append-only event log plus schema metadata and a SHA-256 checksum over the canonical event list.
+
+Restore must verify the backup before writing a target store. Restored stores preserve original event ids and sequence numbers, then rebuild derived read models.
+
+Payload files referenced by `payloadRef` are not embedded in the Substrate backup. They remain external artifacts and need their own retention policy.
+
 ### Memory Node
 
 A memory node is a governed memory object:
