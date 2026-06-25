@@ -77,10 +77,14 @@ This is intentional: exported context must leave a receipt. If a caller needs a 
 The test suite currently checks:
 
 - failed lifecycle transition does not corrupt the file event log;
+- failed relation writes do not persist corrupt events or partial rows;
+- failed feedback writes do not persist corrupt events or partial rows;
 - file and SQLite adapters compile identical buckets for the same evidence;
 - superseded memory is blocked from direct use;
 - archived evidence becomes a rehydrate hook;
 - scope-local relations cannot leak across scopes;
+- file snapshots can be rebuilt from append-only events;
+- concurrent writes are serialized with contiguous event sequences;
 - Runtime snapshot import opens source SQLite read-only.
 
 ## Non-Goals

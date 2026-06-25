@@ -183,6 +183,104 @@ test("failed lifecycle transition does not persist a corrupt event", async () =>
   });
 });
 
+test("failed relation and feedback writes do not persist corrupt events", async () => {
+  await withStore(async (dir) => {
+    const store = await openFileAionisSubstrate({ dir });
+    await store.putNode({
+      id: "existing",
+      scope: "repo-a",
+      kind: "fact",
+      summary: "Existing memory.",
+      lifecycle: "active",
+      authority: "trusted",
+      confidence: 0.8,
+    });
+
+    await assert.rejects(
+      store.putRelation({
+        scope: "repo-a",
+        kind: "supports",
+        sourceId: "missing-source",
+        targetId: "existing",
+      }),
+      /cannot relate missing source memory node: missing-source/,
+    );
+    await assert.rejects(
+      store.putRelation({
+        scope: "repo-a",
+        kind: "supports",
+        sourceId: "existing",
+        targetId: "missing-target",
+      }),
+      /cannot relate missing target memory node: missing-target/,
+    );
+    await assert.rejects(
+      store.recordFeedback({
+        scope: "repo-a",
+        memoryId: "missing-feedback-target",
+        outcome: "negative",
+        strength: "weak",
+      }),
+      /cannot record feedback for missing memory node: missing-feedback-target/,
+    );
+
+    const eventLog = await readFile(join(dir, "events.jsonl"), "utf8");
+    assert.equal(eventLog.trim().split("\n").length, 1);
+    assert.equal((await store.listRelations("repo-a")).length, 0);
+    assert.equal((await store.listEvents()).length, 1);
+
+    await store.close();
+    const reopened = await openFileAionisSubstrate({ dir });
+    assert.equal((await reopened.listEvents()).length, 1);
+    assert.equal((await reopened.listRelations("repo-a")).length, 0);
+    assert.equal((await reopened.getNode("repo-a", "existing"))?.id, "existing");
+  });
+});
+
+test("file adapter rebuilds the snapshot from the append-only event log", async () => {
+  await withStore(async (dir) => {
+    let store = await openFileAionisSubstrate({ dir });
+    await store.putNode({
+      id: "current",
+      scope: "repo-a",
+      kind: "execution",
+      summary: "Current state survives snapshot loss.",
+      lifecycle: "active",
+      authority: "trusted",
+      confidence: 0.9,
+    });
+    await store.close();
+
+    await rm(join(dir, "snapshot.json"), { force: true });
+
+    store = await openFileAionisSubstrate({ dir });
+    assert.equal((await store.getNode("repo-a", "current"))?.summary, "Current state survives snapshot loss.");
+    assert.equal((await store.listEvents()).length, 1);
+    assert.match(await readFile(join(dir, "snapshot.json"), "utf8"), /current/);
+  });
+});
+
+test("file adapter serializes concurrent writes with contiguous event sequences", async () => {
+  await withStore(async (dir) => {
+    const store = await openFileAionisSubstrate({ dir });
+    await Promise.all(Array.from({ length: 25 }, (_, index) =>
+      store.putNode({
+        id: `node-${index}`,
+        scope: "repo-a",
+        kind: "fact",
+        summary: `Concurrent memory ${index}.`,
+        lifecycle: "candidate",
+        authority: "unknown",
+        confidence: 0.5,
+      })));
+
+    const events = await store.listEvents();
+    assert.equal(events.length, 25);
+    assert.deepEqual(events.map((event) => event.sequence), Array.from({ length: 25 }, (_, index) => index + 1));
+    assert.equal((await store.listNodes("repo-a")).length, 25);
+  });
+});
+
 test("scope isolation keeps relations and admission decisions local to a scope", async () => {
   await withStore(async (dir) => {
     const store = await openFileAionisSubstrate({ dir });

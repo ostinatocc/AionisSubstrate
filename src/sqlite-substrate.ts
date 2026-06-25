@@ -501,12 +501,17 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
     async putRelation(input: AionisRelationInput): Promise<AionisRelation> {
       return await enqueue(() => transaction(() => {
         const ts = isoNow();
+        const scope = requireNonEmpty(input.scope, "scope");
+        const sourceId = requireNonEmpty(input.sourceId, "sourceId");
+        const targetId = requireNonEmpty(input.targetId, "targetId");
+        if (!getNodeSync(scope, sourceId)) throw new Error(`cannot relate missing source memory node: ${sourceId}`);
+        if (!getNodeSync(scope, targetId)) throw new Error(`cannot relate missing target memory node: ${targetId}`);
         const relation: AionisRelation = {
           id: requireNonEmpty(input.id ?? randomUUID(), "relation id"),
-          scope: requireNonEmpty(input.scope, "scope"),
+          scope,
           kind: input.kind,
-          sourceId: requireNonEmpty(input.sourceId, "sourceId"),
-          targetId: requireNonEmpty(input.targetId, "targetId"),
+          sourceId,
+          targetId,
           confidence: clampConfidence(input.confidence ?? 0.7),
           reasons: normalizeStrings(input.reasons),
           metadata: input.metadata ?? {},
@@ -521,10 +526,13 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
     async recordFeedback(input: AionisFeedbackInput): Promise<AionisFeedback> {
       return await enqueue(() => transaction(() => {
         const ts = isoNow();
+        const scope = requireNonEmpty(input.scope, "scope");
+        const memoryId = requireNonEmpty(input.memoryId, "memoryId");
+        if (!getNodeSync(scope, memoryId)) throw new Error(`cannot record feedback for missing memory node: ${memoryId}`);
         const feedback: AionisFeedback = {
           id: requireNonEmpty(input.id ?? randomUUID(), "feedback id"),
-          scope: requireNonEmpty(input.scope, "scope"),
-          memoryId: requireNonEmpty(input.memoryId, "memoryId"),
+          scope,
+          memoryId,
           outcome: input.outcome,
           strength: input.strength,
           runId: input.runId ?? null,

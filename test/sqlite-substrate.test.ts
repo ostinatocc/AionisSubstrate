@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
+import { DatabaseSync } from "node:sqlite";
 import { openFileAionisSubstrate, openSqliteAionisSubstrate, type AionisSubstrate } from "../src/index.ts";
 
 async function withSqlite<T>(fn: (path: string) => Promise<T>): Promise<T> {
@@ -104,6 +105,84 @@ test("sqlite adapter keeps controlled forgetting as a durable lifecycle transiti
 
     const events = await store.listEvents();
     assert.ok(events.some((event) => event.type === "memory.lifecycle.transition"));
+    await store.close();
+  });
+});
+
+test("sqlite adapter rolls back invalid relation and feedback writes without partial events", async () => {
+  await withSqlite(async (path) => {
+    const store = await openSqliteAionisSubstrate({ path });
+    await store.putNode({
+      id: "existing",
+      scope: "repo-a",
+      kind: "fact",
+      summary: "Existing memory.",
+      lifecycle: "active",
+      authority: "trusted",
+      confidence: 0.8,
+    });
+
+    await assert.rejects(
+      store.putRelation({
+        scope: "repo-a",
+        kind: "supports",
+        sourceId: "missing-source",
+        targetId: "existing",
+      }),
+      /cannot relate missing source memory node: missing-source/,
+    );
+    await assert.rejects(
+      store.putRelation({
+        scope: "repo-a",
+        kind: "supports",
+        sourceId: "existing",
+        targetId: "missing-target",
+      }),
+      /cannot relate missing target memory node: missing-target/,
+    );
+    await assert.rejects(
+      store.recordFeedback({
+        scope: "repo-a",
+        memoryId: "missing-feedback-target",
+        outcome: "negative",
+        strength: "weak",
+      }),
+      /cannot record feedback for missing memory node: missing-feedback-target/,
+    );
+
+    assert.equal((await store.listEvents()).length, 1);
+    assert.equal((await store.listRelations("repo-a")).length, 0);
+    await store.close();
+
+    const db = new DatabaseSync(path, { readOnly: true });
+    const eventCount = db.prepare("SELECT count(*) AS count FROM substrate_events").get() as { count: number };
+    const relationCount = db.prepare("SELECT count(*) AS count FROM memory_relations").get() as { count: number };
+    const feedbackCount = db.prepare("SELECT count(*) AS count FROM memory_feedback").get() as { count: number };
+    db.close();
+    assert.equal(eventCount.count, 1);
+    assert.equal(relationCount.count, 0);
+    assert.equal(feedbackCount.count, 0);
+  });
+});
+
+test("sqlite adapter serializes concurrent writes with contiguous event sequences", async () => {
+  await withSqlite(async (path) => {
+    const store = await openSqliteAionisSubstrate({ path });
+    await Promise.all(Array.from({ length: 25 }, (_, index) =>
+      store.putNode({
+        id: `node-${index}`,
+        scope: "repo-a",
+        kind: "fact",
+        summary: `Concurrent memory ${index}.`,
+        lifecycle: "candidate",
+        authority: "unknown",
+        confidence: 0.5,
+      })));
+
+    const events = await store.listEvents();
+    assert.equal(events.length, 25);
+    assert.deepEqual(events.map((event) => event.sequence), Array.from({ length: 25 }, (_, index) => index + 1));
+    assert.equal((await store.listNodes("repo-a")).length, 25);
     await store.close();
   });
 });

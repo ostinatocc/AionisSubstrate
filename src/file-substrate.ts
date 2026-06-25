@@ -87,15 +87,28 @@ function snapshotFromState(state: FileSubstrateState): AionisSubstrateSnapshot {
   };
 }
 
+function validateEvent(state: FileSubstrateState, event: AionisEvent): void {
+  if (event.type === "memory.lifecycle.transition") {
+    const nodeKey = key(event.payload.scope, event.payload.memoryId);
+    if (!state.nodes.has(nodeKey)) throw new Error(`cannot transition missing memory node: ${event.payload.memoryId}`);
+  } else if (event.type === "memory.relation.upsert") {
+    const sourceKey = key(event.payload.scope, event.payload.sourceId);
+    const targetKey = key(event.payload.scope, event.payload.targetId);
+    if (!state.nodes.has(sourceKey)) throw new Error(`cannot relate missing source memory node: ${event.payload.sourceId}`);
+    if (!state.nodes.has(targetKey)) throw new Error(`cannot relate missing target memory node: ${event.payload.targetId}`);
+  } else if (event.type === "memory.feedback.recorded") {
+    const nodeKey = key(event.payload.scope, event.payload.memoryId);
+    if (!state.nodes.has(nodeKey)) throw new Error(`cannot record feedback for missing memory node: ${event.payload.memoryId}`);
+  }
+}
+
 function applyEvent(state: FileSubstrateState, event: AionisEvent): void {
-  state.lastSequence = Math.max(state.lastSequence, event.sequence);
-  state.events.push(event);
+  validateEvent(state, event);
   if (event.type === "memory.node.upsert") {
     state.nodes.set(key(event.payload.scope, event.payload.id), event.payload);
   } else if (event.type === "memory.lifecycle.transition") {
     const nodeKey = key(event.payload.scope, event.payload.memoryId);
-    const current = state.nodes.get(nodeKey);
-    if (!current) throw new Error(`cannot transition missing memory node: ${event.payload.memoryId}`);
+    const current = state.nodes.get(nodeKey)!;
     state.nodes.set(nodeKey, {
       ...current,
       lifecycle: event.payload.lifecycle,
@@ -114,6 +127,8 @@ function applyEvent(state: FileSubstrateState, event: AionisEvent): void {
   } else if (event.type === "memory.decision.recorded") {
     state.decisions.set(key(event.payload.scope, event.payload.id), event.payload);
   }
+  state.lastSequence = Math.max(state.lastSequence, event.sequence);
+  state.events.push(event);
 }
 
 async function readEvents(path: string): Promise<AionisEvent[]> {
