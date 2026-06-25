@@ -101,3 +101,29 @@ reference by concrete memory id overlap.
 This command is intentionally outside Runtime core. It creates a traceable
 reference artifact for Substrate parity; it does not mutate the focused Runtime
 repository and does not use `docs/examples` as evidence.
+
+## Current same-source boundary
+
+The built-in same-source product fixture currently validates the execution
+continuity path that Runtime itself exposes from the same Lite SQLite file:
+
+- accepted execution state enters `use_now`;
+- failed execution branches enter `do_not_use`;
+- measure/debug/audit records are retained as audit evidence and excluded from
+  agent-facing Substrate import.
+
+It does not claim full four-bucket Runtime parity. In particular,
+`inspect_before_use` and `rehydrate` have separate Runtime product paths:
+
+- ordinary/candidate memory admission is surfaced through planning recall and
+  external candidate governance;
+- archived/payload evidence becomes a rehydration hook only when the Runtime
+  guide surface returns that hook.
+
+Substrate already supports those buckets at the store contract level, and the
+contract benchmark covers them. The same-source Runtime reference corpus should
+only count `inspect_before_use` or `rehydrate` when the focused Runtime exports
+those exact memory ids in `agent_context` or `memory_decision_trace`. Do not
+force extra local SQLite rows into those buckets just to increase apparent
+coverage; that would turn parity into a runner-specific assertion instead of a
+Runtime reference.
