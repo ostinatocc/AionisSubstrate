@@ -9,6 +9,7 @@ import { runRuntimeReferenceCorpus } from "../src/index.ts";
 type Args = {
   runtimeRoot: string;
   outputDir: string;
+  scenarioCount: number;
   maxPerBucket?: number;
 };
 
@@ -32,10 +33,79 @@ type AionisSdkModule = {
   };
 };
 
+type ReferenceScenario = {
+  id: string;
+  taskFamily: string;
+  workflowSignature: string;
+  activeTarget: string;
+  failedTarget: string;
+  activeTitle: string;
+  failedTitle: string;
+  activeSummary: string;
+  failedSummary: string;
+  queryText: string;
+  acceptanceCheck: string;
+};
+
+const SCENARIOS: ReferenceScenario[] = [
+  {
+    id: "active-route",
+    taskFamily: "runtime_route_continuity",
+    workflowSignature: "active-route-with-failed-branch",
+    activeTarget: "src/runtime/current-route.ts",
+    failedTarget: "src/runtime/failed-legacy-route.ts",
+    activeTitle: "Accepted current runtime route",
+    failedTitle: "Rejected legacy route",
+    activeSummary: "Current route: continue {activeTarget}; verifier passed and this is the active route for the next worker.",
+    failedSummary: "Failed branch: {failedTarget} failed verifier and must not be direct-use context.",
+    queryText: "Continue {activeTarget} and avoid the failed legacy route.",
+    acceptanceCheck: "verifier passed",
+  },
+  {
+    id: "schema-migration",
+    taskFamily: "schema_migration_continuity",
+    workflowSignature: "accepted-schema-migration-with-rejected-rollback",
+    activeTarget: "src/storage/schema-migration.ts",
+    failedTarget: "src/storage/rollback-adapter.ts",
+    activeTitle: "Accepted schema migration route",
+    failedTitle: "Rejected rollback adapter",
+    activeSummary: "Current route: continue {activeTarget}; migration verifier passed and this is the accepted storage path.",
+    failedSummary: "Failed branch: {failedTarget} produced incompatible replay state and must not be direct-use context.",
+    queryText: "Continue the accepted migration route in {activeTarget} and avoid the rejected rollback branch.",
+    acceptanceCheck: "migration verifier passed",
+  },
+  {
+    id: "context-compiler",
+    taskFamily: "context_compiler_continuity",
+    workflowSignature: "accepted-context-compiler-with-rejected-shortcut",
+    activeTarget: "src/context/compiler.ts",
+    failedTarget: "src/context/shortcut-summary.ts",
+    activeTitle: "Accepted context compiler route",
+    failedTitle: "Rejected shortcut summary route",
+    activeSummary: "Current route: continue {activeTarget}; context compiler verifier passed with governed buckets intact.",
+    failedSummary: "Failed branch: {failedTarget} collapsed blocked evidence into direct-use context and must not be reused.",
+    queryText: "Continue the governed context compiler path in {activeTarget}.",
+    acceptanceCheck: "context compiler verifier passed",
+  },
+  {
+    id: "feedback-attribution",
+    taskFamily: "feedback_attribution_continuity",
+    workflowSignature: "accepted-feedback-attribution-with-rejected-broad-counter-signal",
+    activeTarget: "src/feedback/attribution.ts",
+    failedTarget: "src/feedback/broad-negative-counter.ts",
+    activeTitle: "Accepted attribution route",
+    failedTitle: "Rejected broad negative counter-signal",
+    activeSummary: "Current route: continue {activeTarget}; attribution verifier passed and feedback remained scoped to used memory.",
+    failedSummary: "Failed branch: {failedTarget} attributed failure to exposed-but-unused memory and must not be direct-use context.",
+    queryText: "Continue scoped feedback attribution in {activeTarget}.",
+    acceptanceCheck: "attribution verifier passed",
+  },
+];
+
 function usage(): string {
   return [
     "Usage:",
-    "  node scripts/runtime-product-reference-fixture.ts --runtime-root /path/AionisRuntime-focused",
+    "  node scripts/runtime-product-reference-fixture.ts --runtime-root /path/AionisRuntime-focused [--scenario-count 4]",
     "",
     "Starts focused Runtime with a persistent Lite SQLite path, runs a real product guide/measure loop,",
     "writes same-source reference JSON, then runs Substrate Runtime reference corpus parity.",
@@ -61,6 +131,13 @@ function parseArgs(argv: string[]): Args {
       if (!Number.isInteger(parsed) || parsed < 0) throw new Error("--max-per-bucket must be a non-negative integer");
       args.maxPerBucket = parsed;
       i += 1;
+    } else if (flag === "--scenario-count") {
+      if (!value) throw new Error("--scenario-count requires a value");
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed < 1) throw new Error("--scenario-count must be a positive integer");
+      if (parsed > SCENARIOS.length) throw new Error(`--scenario-count cannot exceed ${SCENARIOS.length}`);
+      args.scenarioCount = parsed;
+      i += 1;
     } else if (flag === "--help" || flag === "-h") {
       console.log(usage());
       process.exit(0);
@@ -72,6 +149,7 @@ function parseArgs(argv: string[]): Args {
   return {
     runtimeRoot: args.runtimeRoot,
     outputDir: args.outputDir ?? resolve("reports", `runtime-product-reference-${new Date().toISOString().replace(/[:.]/g, "-")}`),
+    scenarioCount: args.scenarioCount ?? 1,
     maxPerBucket: args.maxPerBucket,
   };
 }
@@ -181,20 +259,25 @@ async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-async function runProductLoop(args: Args, handle: RuntimeHandle): Promise<{
+function scenarioText(template: string, scenario: ReferenceScenario): string {
+  return template
+    .replaceAll("{activeTarget}", scenario.activeTarget)
+    .replaceAll("{failedTarget}", scenario.failedTarget);
+}
+
+async function runProductLoop(args: Args, handle: RuntimeHandle, scenario: ReferenceScenario): Promise<{
   referencePath: string;
-  runSummaryPath: string;
-  parityPath: string;
-  parity: Awaited<ReturnType<typeof runRuntimeReferenceCorpus>>;
+  scenarioSummaryPath: string;
+  scope: string;
+  runId: string;
+  activeMemoryId: string;
+  failedMemoryId: string;
+  agentContext: Record<string, unknown>;
 }> {
   const sdk = await loadSdk(args.runtimeRoot);
-  const runId = `substrate-reference-${randomUUID().slice(0, 8)}`;
-  const scope = `substrate-reference:${runId}`;
-  const taskSignature = `substrate-reference-task:${runId}`;
-  const taskFamily = "substrate_reference_parity";
-  const workflowSignature = "active-route-with-failed-branch";
-  const activeTarget = "src/runtime/current-route.ts";
-  const failedTarget = "src/runtime/failed-legacy-route.ts";
+  const runId = `substrate-reference-${scenario.id}-${randomUUID().slice(0, 8)}`;
+  const scope = `substrate-reference:${scenario.id}:${runId}`;
+  const taskSignature = `substrate-reference-task:${scenario.id}:${runId}`;
   const agentId = "substrate-reference-agent";
   const client = sdk.createAionisClient({
     baseUrl: handle.baseUrl,
@@ -208,8 +291,8 @@ async function runProductLoop(args: Args, handle: RuntimeHandle): Promise<{
     role: "worker",
     run_id: `run:${runId}:before`,
     task_signature: taskSignature,
-    task_family: taskFamily,
-    workflow_signature: workflowSignature,
+    task_family: scenario.taskFamily,
+    workflow_signature: scenario.workflowSignature,
     query_text: "Continue runtime reference parity task if prior execution memory exists.",
     context_mode: "compact_agent",
     include_packets: true,
@@ -221,18 +304,18 @@ async function runProductLoop(args: Args, handle: RuntimeHandle): Promise<{
     role: "worker",
     run_id: `run:${runId}:active`,
     task_signature: taskSignature,
-    task_family: taskFamily,
-    workflow_signature: workflowSignature,
-    title: "Accepted current runtime route",
-    summary: `Current route: continue ${activeTarget}; verifier passed and this is the active route for the next worker.`,
+    task_family: scenario.taskFamily,
+    workflow_signature: scenario.workflowSignature,
+    title: scenario.activeTitle,
+    summary: scenarioText(scenario.activeSummary, scenario),
     outcome: "succeeded",
-    target_files: [activeTarget],
+    target_files: [scenario.activeTarget],
     workflow_steps: ["inspect current route", "patch active file", "run verifier"],
     tool_set: ["read", "edit", "test"],
-    acceptance_checks: ["verifier passed"],
-    continuation_hint: `Continue ${activeTarget}.`,
+    acceptance_checks: [scenario.acceptanceCheck],
+    continuation_hint: `Continue ${scenario.activeTarget}.`,
     confidence: 0.96,
-    evidence_ref: `evidence://substrate-reference/${runId}/active-route`,
+    evidence_ref: `evidence://substrate-reference/${runId}/${scenario.id}/active-route`,
     slots: {
       execution_result_summary: {
         status: "passed",
@@ -247,23 +330,23 @@ async function runProductLoop(args: Args, handle: RuntimeHandle): Promise<{
     role: "worker",
     run_id: `run:${runId}:failed`,
     task_signature: taskSignature,
-    task_family: taskFamily,
+    task_family: scenario.taskFamily,
     workflow_signature: "failed-legacy-route",
-    title: "Rejected legacy route",
-    summary: `Failed branch: ${failedTarget} failed verifier and must not be direct-use context.`,
+    title: scenario.failedTitle,
+    summary: scenarioText(scenario.failedSummary, scenario),
     outcome: "failed",
-    target_files: [failedTarget],
+    target_files: [scenario.failedTarget],
     workflow_steps: ["inspect legacy route", "patch legacy file", "verifier failed"],
     tool_set: ["read", "edit", "test"],
     acceptance_checks: ["verifier failed"],
-    continuation_hint: `Do not continue ${failedTarget}; use ${activeTarget}.`,
+    continuation_hint: `Do not continue ${scenario.failedTarget}; use ${scenario.activeTarget}.`,
     confidence: 0.31,
-    raw_ref: `trace://substrate-reference/${runId}/failed/raw`,
-    evidence_ref: `evidence://substrate-reference/${runId}/failed-route`,
+    raw_ref: `trace://substrate-reference/${runId}/${scenario.id}/failed/raw`,
+    evidence_ref: `evidence://substrate-reference/${runId}/${scenario.id}/failed-route`,
     verification: {
       verifier_agent_id: "verifier",
       passed: false,
-      reason: "Failed legacy route regressed the Runtime reference task.",
+      reason: `${scenario.failedTitle} regressed the Runtime reference task.`,
     },
     slots: {
       execution_result_summary: {
@@ -279,15 +362,15 @@ async function runProductLoop(args: Args, handle: RuntimeHandle): Promise<{
     role: "worker",
     run_id: `run:${runId}:after`,
     task_signature: taskSignature,
-    task_family: taskFamily,
-    workflow_signature: workflowSignature,
-    query_text: `Continue ${activeTarget} and avoid the failed legacy route.`,
+    task_family: scenario.taskFamily,
+    workflow_signature: scenario.workflowSignature,
+    query_text: scenarioText(scenario.queryText, scenario),
     context: {
       task_signature: taskSignature,
-      task_family: taskFamily,
-      workflow_signature: workflowSignature,
-      requested_targets: [activeTarget],
-      blocked_targets: [failedTarget],
+      task_family: scenario.taskFamily,
+      workflow_signature: scenario.workflowSignature,
+      requested_targets: [scenario.activeTarget],
+      blocked_targets: [scenario.failedTarget],
     },
     context_mode: "compact_agent",
     include_packets: true,
@@ -300,8 +383,8 @@ async function runProductLoop(args: Args, handle: RuntimeHandle): Promise<{
     role: "worker",
     run_id: `run:${runId}:feedback`,
     task_signature: taskSignature,
-    task_family: taskFamily,
-    workflow_signature: workflowSignature,
+    task_family: scenario.taskFamily,
+    workflow_signature: scenario.workflowSignature,
     title: "Reference parity worker used active route",
     summary: "Worker used the active route exposed by Aionis and avoided the failed branch.",
     outcome: "succeeded",
@@ -317,8 +400,8 @@ async function runProductLoop(args: Args, handle: RuntimeHandle): Promise<{
   const measure = await client.execution.measureRun<Record<string, unknown>>({
     run_id: runId,
     task_signature: taskSignature,
-    task_family: taskFamily,
-    workflow_signature: workflowSignature,
+    task_family: scenario.taskFamily,
+    workflow_signature: scenario.workflowSignature,
     before_guide: beforeGuide,
     after_guide: afterGuide,
     feedback_result: feedback,
@@ -335,30 +418,18 @@ async function runProductLoop(args: Args, handle: RuntimeHandle): Promise<{
     tenant_id: "default",
     scope,
     run_id: runId,
+    scenario_id: scenario.id,
     source_runtime_write_sqlite_path: handle.writeDbPath,
     agent_context: afterGuide.agent_context,
     memory_decision_trace: measure.memory_decision_trace,
   };
-  const referencePath = join(args.outputDir, "reference.json");
+  const referencePath = join(args.outputDir, "references", `${scenario.id}.json`);
   await writeJson(referencePath, reference);
 
-  const parityPath = join(args.outputDir, "parity-summary.json");
-  const parity = await runRuntimeReferenceCorpus({
-    sourceRootPaths: [handle.writeDbPath],
-    referenceRootPaths: [referencePath],
-    outputPath: parityPath,
-    maxSourceFiles: null,
-    maxScopes: null,
-    maxScopesPerFile: 100,
-    maxReferences: null,
-    minNodes: 1,
-    minOverlap: 1,
-    maxPerBucket: args.maxPerBucket,
-  });
-
-  const runSummaryPath = join(args.outputDir, "run-summary.json");
-  await writeJson(runSummaryPath, {
-    contract_version: "aionis_substrate_runtime_product_reference_fixture_v1",
+  const scenarioSummaryPath = join(args.outputDir, "scenario-summaries", `${scenario.id}.json`);
+  await writeJson(scenarioSummaryPath, {
+    contract_version: "aionis_substrate_runtime_product_reference_scenario_v1",
+    scenario_id: scenario.id,
     run_id: runId,
     scope,
     runtime_root: args.runtimeRoot,
@@ -366,7 +437,6 @@ async function runProductLoop(args: Args, handle: RuntimeHandle): Promise<{
     runtime_write_sqlite_path: handle.writeDbPath,
     runtime_replay_sqlite_path: handle.replayDbPath,
     reference_path: referencePath,
-    parity_path: parityPath,
     memory_ids: {
       active: activeMemoryId,
       failed: failedMemoryId,
@@ -377,35 +447,92 @@ async function runProductLoop(args: Args, handle: RuntimeHandle): Promise<{
       do_not_use_memory_ids: stringArray(agentContext.do_not_use_memory_ids),
       rehydrate_hints: agentContext.rehydrate_hints ?? [],
     },
-    parity: {
-      matched_references: parity.matched_references,
-      passed_matches: parity.passed_matches,
-      exact_matches: parity.exact_matches,
-      partial_matches: parity.partial_matches,
-      unmatched_references: parity.unmatched_references,
-      first_match: parity.matched_reports[0] ?? null,
-    },
   });
 
-  return { referencePath, runSummaryPath, parityPath, parity };
+  return {
+    referencePath,
+    scenarioSummaryPath,
+    scope,
+    runId,
+    activeMemoryId,
+    failedMemoryId,
+    agentContext,
+  };
 }
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const handle = await startRuntime(args);
   try {
-    const result = await runProductLoop(args, handle);
+    const scenarios = SCENARIOS.slice(0, args.scenarioCount);
+    const scenarioResults = [];
+    for (const scenario of scenarios) {
+      scenarioResults.push(await runProductLoop(args, handle, scenario));
+    }
+
+    const parityPath = join(args.outputDir, "parity-summary.json");
+    const parity = await runRuntimeReferenceCorpus({
+      sourceRootPaths: [handle.writeDbPath],
+      referenceRootPaths: [join(args.outputDir, "references")],
+      outputPath: parityPath,
+      maxSourceFiles: null,
+      maxScopes: null,
+      maxScopesPerFile: 100,
+      maxReferences: null,
+      minNodes: 1,
+      minOverlap: 1,
+      maxPerBucket: args.maxPerBucket,
+    });
+
+    const runSummaryPath = join(args.outputDir, "run-summary.json");
+    await writeJson(runSummaryPath, {
+      contract_version: "aionis_substrate_runtime_product_reference_corpus_v1",
+      runtime_root: args.runtimeRoot,
+      runtime_base_url: handle.baseUrl,
+      runtime_write_sqlite_path: handle.writeDbPath,
+      runtime_replay_sqlite_path: handle.replayDbPath,
+      reference_root_path: join(args.outputDir, "references"),
+      parity_path: parityPath,
+      scenario_count: scenarioResults.length,
+      scenarios: scenarioResults.map((result) => ({
+        run_id: result.runId,
+        scope: result.scope,
+        reference_path: result.referencePath,
+        scenario_summary_path: result.scenarioSummaryPath,
+        memory_ids: {
+          active: result.activeMemoryId,
+          failed: result.failedMemoryId,
+        },
+        runtime_agent_context: {
+          use_now_memory_ids: stringArray(result.agentContext.use_now_memory_ids),
+          inspect_before_use_memory_ids: stringArray(result.agentContext.inspect_before_use_memory_ids),
+          do_not_use_memory_ids: stringArray(result.agentContext.do_not_use_memory_ids),
+          rehydrate_hints: result.agentContext.rehydrate_hints ?? [],
+        },
+      })),
+      parity: {
+        matched_references: parity.matched_references,
+        passed_matches: parity.passed_matches,
+        exact_matches: parity.exact_matches,
+        partial_matches: parity.partial_matches,
+        unmatched_references: parity.unmatched_references,
+        matched_reports: parity.matched_reports,
+        unmatched_reference_reports: parity.unmatched_reference_reports,
+      },
+    });
+
     console.log(JSON.stringify({
       output_dir: args.outputDir,
       runtime_write_sqlite_path: handle.writeDbPath,
-      reference_path: result.referencePath,
-      run_summary_path: result.runSummaryPath,
-      parity_path: result.parityPath,
-      matched_references: result.parity.matched_references,
-      passed_matches: result.parity.passed_matches,
-      exact_matches: result.parity.exact_matches,
-      partial_matches: result.parity.partial_matches,
-      unmatched_references: result.parity.unmatched_references,
+      reference_root_path: join(args.outputDir, "references"),
+      run_summary_path: runSummaryPath,
+      parity_path: parityPath,
+      scenario_count: scenarioResults.length,
+      matched_references: parity.matched_references,
+      passed_matches: parity.passed_matches,
+      exact_matches: parity.exact_matches,
+      partial_matches: parity.partial_matches,
+      unmatched_references: parity.unmatched_references,
     }, null, 2));
   } finally {
     stopRuntime(handle);

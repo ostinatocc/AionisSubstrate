@@ -78,16 +78,25 @@ Use `make:runtime-product-reference` to create a same-source artifact pair:
 
 ```bash
 npm run make:runtime-product-reference -- \
-  --runtime-root /Volumes/ziel/AionisRuntime-focused
+  --runtime-root /Volumes/ziel/AionisRuntime-focused \
+  --scenario-count 4
 ```
 
 Outputs are written to `reports/runtime-product-reference-*/`:
 
 - `runtime-write.sqlite`
 - `runtime-replay.sqlite`
-- `reference.json`
+- `references/*.json`
+- `scenario-summaries/*.json`
 - `parity-summary.json`
 - `run-summary.json`
+
+The default `--scenario-count` is `1` for quick smoke checks. Use
+`--scenario-count 4` to exercise the current built-in same-source corpus:
+active route, schema migration, context compiler, and feedback attribution.
+Every scenario is written through the focused Runtime SDK into the same Runtime
+SQLite file, then matched back to its own exported Runtime guide/measure
+reference by concrete memory id overlap.
 
 This command is intentionally outside Runtime core. It creates a traceable
 reference artifact for Substrate parity; it does not mutate the focused Runtime
