@@ -21,6 +21,8 @@ type Args = {
   runtimeRoot: string;
   outputDir: string;
   scenarioCount: number;
+  generatedCount: number;
+  seed: string;
   maxPerBucket?: number;
 };
 
@@ -60,6 +62,7 @@ type DualWriteScenario = {
 
 type ScenarioReport = {
   scenario_id: string;
+  scenario_source: "fixed" | "generated";
   scope: string;
   run_id: string;
   runtime_memory_ids: {
@@ -73,6 +76,11 @@ type ScenarioReport = {
     bucket_reports: ReturnType<typeof compareSurfaces>;
   };
   event_counts: Record<AionisEvent["type"], number>;
+  write_integrity: {
+    invalid_relation_rejected: boolean;
+    invalid_feedback_rejected: boolean;
+    event_count_unchanged: boolean;
+  };
   feedback_recorded: boolean;
   measure_recorded: boolean;
 };
@@ -88,7 +96,7 @@ type ReopenReport = {
 };
 
 type RuntimeDualWriteExperimentReport = {
-  contract_version: "aionis_runtime_dual_write_experiment_report_v1";
+  contract_version: "aionis_runtime_dual_write_experiment_report_v2";
   generated_at: string;
   runtime_root: string;
   runtime_base_url: string;
@@ -96,10 +104,14 @@ type RuntimeDualWriteExperimentReport = {
   runtime_replay_db_path: string;
   substrate_db_path: string;
   scenario_count: number;
+  fixed_scenario_count: number;
+  generated_scenario_count: number;
   exact_scenario_count: number;
   persisted_exact_scenario_count: number;
+  write_integrity_pass_count: number;
   failed_scenario_count: number;
   max_per_bucket: number | null;
+  seed: string;
   notes: string[];
   scenarios: ScenarioReport[];
   reopen: ReopenReport[];
@@ -160,10 +172,63 @@ const SCENARIOS: DualWriteScenario[] = [
   },
 ];
 
+const GENERATED_DOMAINS = [
+  {
+    id: "auth-session",
+    taskFamily: "dual_write_auth_session",
+    workflowSignature: "accepted-auth-session-route",
+    activeTarget: "src/auth/session-state.ts",
+    failedTarget: "src/auth/legacy-cookie-state.ts",
+    activeNoun: "session state route",
+    failedNoun: "legacy cookie route",
+    verifier: "auth session verifier passed",
+  },
+  {
+    id: "billing-ledger",
+    taskFamily: "dual_write_billing_ledger",
+    workflowSignature: "accepted-billing-ledger-route",
+    activeTarget: "src/billing/ledger-writer.ts",
+    failedTarget: "src/billing/legacy-invoice-writer.ts",
+    activeNoun: "ledger writer route",
+    failedNoun: "legacy invoice writer",
+    verifier: "billing replay verifier passed",
+  },
+  {
+    id: "search-index",
+    taskFamily: "dual_write_search_index",
+    workflowSignature: "accepted-search-index-route",
+    activeTarget: "src/search/index-maintainer.ts",
+    failedTarget: "src/search/old-tokenizer-sync.ts",
+    activeNoun: "index maintainer route",
+    failedNoun: "old tokenizer sync",
+    verifier: "search index verifier passed",
+  },
+  {
+    id: "ci-runner",
+    taskFamily: "dual_write_ci_runner",
+    workflowSignature: "accepted-ci-runner-route",
+    activeTarget: "src/ci/runner-state.ts",
+    failedTarget: "src/ci/retry-shortcut.ts",
+    activeNoun: "runner state route",
+    failedNoun: "retry shortcut",
+    verifier: "CI verifier passed",
+  },
+  {
+    id: "docs-builder",
+    taskFamily: "dual_write_docs_builder",
+    workflowSignature: "accepted-docs-builder-route",
+    activeTarget: "src/docs/site-builder.ts",
+    failedTarget: "src/docs/stale-nav-generator.ts",
+    activeNoun: "site builder route",
+    failedNoun: "stale nav generator",
+    verifier: "docs build verifier passed",
+  },
+] as const;
+
 function usage(): string {
   return [
     "Usage:",
-    "  npm run check:runtime-dual-write -- --runtime-root /path/AionisRuntime-focused [--scenario-count 4]",
+    "  npm run check:runtime-dual-write -- --runtime-root /path/AionisRuntime-focused [--generated-count 8]",
     "",
     "Starts focused Runtime, runs real observe/guide/feedback/measure loops, writes the same observed",
     "execution states into an isolated Substrate SQLite store, and compares guide buckets before and after reopen.",
@@ -190,6 +255,16 @@ function parseArgs(argv: string[]): Args {
       if (parsed > SCENARIOS.length) throw new Error(`--scenario-count cannot exceed ${SCENARIOS.length}`);
       args.scenarioCount = parsed;
       i += 1;
+    } else if (flag === "--generated-count") {
+      if (!value) throw new Error("--generated-count requires a value");
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed < 0) throw new Error("--generated-count must be a non-negative integer");
+      args.generatedCount = parsed;
+      i += 1;
+    } else if (flag === "--seed") {
+      if (!value) throw new Error("--seed requires a value");
+      args.seed = value;
+      i += 1;
     } else if (flag === "--max-per-bucket") {
       if (!value) throw new Error("--max-per-bucket requires a value");
       const parsed = Number(value);
@@ -208,8 +283,54 @@ function parseArgs(argv: string[]): Args {
     runtimeRoot: args.runtimeRoot,
     outputDir: args.outputDir ?? resolve("reports", `runtime-dual-write-${new Date().toISOString().replace(/[:.]/g, "-")}`),
     scenarioCount: args.scenarioCount ?? SCENARIOS.length,
+    generatedCount: args.generatedCount ?? 0,
+    seed: args.seed ?? "runtime-dual-write-v2",
     maxPerBucket: args.maxPerBucket,
   };
+}
+
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function makePrng(seed: string): () => number {
+  let state = hashString(seed) || 1;
+  return () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return (state >>> 0) / 4294967296;
+  };
+}
+
+function generatedScenarios(count: number, seed: string): DualWriteScenario[] {
+  const rand = makePrng(seed);
+  const scenarios: DualWriteScenario[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const domain = GENERATED_DOMAINS[Math.floor(rand() * GENERATED_DOMAINS.length) % GENERATED_DOMAINS.length];
+    const variant = Math.floor(rand() * 10_000).toString(36).padStart(3, "0");
+    const activeTarget = domain.activeTarget.replace(".ts", `-${variant}.ts`);
+    const failedTarget = domain.failedTarget.replace(".ts", `-${variant}.ts`);
+    scenarios.push({
+      id: `generated-${domain.id}-${index + 1}-${variant}`,
+      taskFamily: domain.taskFamily,
+      workflowSignature: `${domain.workflowSignature}-${variant}`,
+      activeTarget,
+      failedTarget,
+      activeTitle: `Accepted ${domain.activeNoun}`,
+      failedTitle: `Rejected ${domain.failedNoun}`,
+      activeSummary: `Current route: continue {activeTarget}; ${domain.verifier} and this is the accepted route for the next worker.`,
+      failedSummary: `Failed branch: {failedTarget} failed replay validation and must not become direct-use context.`,
+      queryText: `Continue {activeTarget}; keep {failedTarget} blocked unless raw evidence is explicitly requested.`,
+      acceptanceCheck: domain.verifier,
+    });
+  }
+  return scenarios;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -407,14 +528,57 @@ async function writeObservedStateToSubstrate(input: {
   });
 }
 
+async function runWriteIntegrityProbe(input: {
+  store: AionisSubstrate;
+  scope: string;
+  activeMemoryId: string;
+  failedMemoryId: string;
+  runId: string;
+}): Promise<ScenarioReport["write_integrity"]> {
+  const beforeEvents = (await input.store.listEvents()).filter((event) => eventScope(event) === input.scope).length;
+  let invalidRelationRejected = false;
+  let invalidFeedbackRejected = false;
+  try {
+    await input.store.putRelation({
+      scope: input.scope,
+      kind: "invalidates",
+      sourceId: input.activeMemoryId,
+      targetId: `${input.failedMemoryId}:missing`,
+      confidence: 0.99,
+      reasons: ["probe invalid relation rollback"],
+    });
+  } catch {
+    invalidRelationRejected = true;
+  }
+  try {
+    await input.store.recordFeedback({
+      scope: input.scope,
+      memoryId: `${input.activeMemoryId}:missing`,
+      outcome: "negative",
+      strength: "strong",
+      runId: input.runId,
+      evidenceRef: `feedback://dual-write/${input.runId}/invalid-feedback-probe`,
+    });
+  } catch {
+    invalidFeedbackRejected = true;
+  }
+  const afterEvents = (await input.store.listEvents()).filter((event) => eventScope(event) === input.scope).length;
+  return {
+    invalid_relation_rejected: invalidRelationRejected,
+    invalid_feedback_rejected: invalidFeedbackRejected,
+    event_count_unchanged: beforeEvents === afterEvents,
+  };
+}
+
 async function runScenario(input: {
   args: Args;
   sdk: AionisSdkModule;
   handle: RuntimeHandle;
   store: AionisSubstrate;
   scenario: DualWriteScenario;
+  scenarioSource: ScenarioReport["scenario_source"];
 }): Promise<ScenarioReport> {
-  const { args, sdk, handle, store, scenario } = input;
+  const { args, sdk, handle, store, scenario, scenarioSource } = input;
   const runId = `substrate-dual-write-${scenario.id}-${randomUUID().slice(0, 8)}`;
   const scope = `substrate-dual-write:${scenario.id}:${runId}`;
   const taskSignature = `substrate-dual-write-task:${scenario.id}:${runId}`;
@@ -561,6 +725,13 @@ async function runScenario(input: {
     runId,
     evidenceRef: `feedback://dual-write/${runId}/${scenario.id}/positive-use`,
   });
+  const writeIntegrity = await runWriteIntegrityProbe({
+    store,
+    scope,
+    activeMemoryId,
+    failedMemoryId,
+    runId,
+  });
 
   const measure = await client.execution.measureRun<Record<string, unknown>>({
     run_id: runId,
@@ -581,6 +752,7 @@ async function runScenario(input: {
   const events = await store.listEvents();
   return {
     scenario_id: scenario.id,
+    scenario_source: scenarioSource,
     scope,
     run_id: runId,
     runtime_memory_ids: {
@@ -594,6 +766,7 @@ async function runScenario(input: {
       bucket_reports: bucketReports,
     },
     event_counts: eventCountsForScope(events, scope),
+    write_integrity: writeIntegrity,
     feedback_recorded: feedback !== null,
     measure_recorded: Object.keys(measure).length > 0,
   };
@@ -640,13 +813,22 @@ async function main(): Promise<void> {
   try {
     const sdk = await loadSdk(args.runtimeRoot);
     const scenarioReports: ScenarioReport[] = [];
-    for (const scenario of SCENARIOS.slice(0, args.scenarioCount)) {
+    const fixedScenarios = SCENARIOS.slice(0, args.scenarioCount).map((scenario) => ({
+      scenario,
+      scenarioSource: "fixed" as const,
+    }));
+    const generated = generatedScenarios(args.generatedCount, args.seed).map((scenario) => ({
+      scenario,
+      scenarioSource: "generated" as const,
+    }));
+    for (const { scenario, scenarioSource } of [...fixedScenarios, ...generated]) {
       scenarioReports.push(await runScenario({
         args,
         sdk,
         handle,
         store,
         scenario,
+        scenarioSource,
       }));
     }
     await store.close();
@@ -658,13 +840,21 @@ async function main(): Promise<void> {
 
     const exactScenarioCount = scenarioReports.filter((scenario) => scenario.parity.exact).length;
     const persistedExactScenarioCount = reopenReports.filter((scenario) => scenario.parity.exact).length;
+    const writeIntegrityPassCount = scenarioReports.filter((scenario) => (
+      scenario.write_integrity.invalid_relation_rejected
+      && scenario.write_integrity.invalid_feedback_rejected
+      && scenario.write_integrity.event_count_unchanged
+    )).length;
     const reopenByScenario = new Map(reopenReports.map((scenario) => [scenario.scenario_id, scenario]));
     const failedScenarioCount = scenarioReports.filter((scenario) => {
       const reopen = reopenByScenario.get(scenario.scenario_id);
-      return !scenario.parity.exact || !reopen?.parity.exact;
+      const writeIntegrityPassed = scenario.write_integrity.invalid_relation_rejected
+        && scenario.write_integrity.invalid_feedback_rejected
+        && scenario.write_integrity.event_count_unchanged;
+      return !scenario.parity.exact || !reopen?.parity.exact || !writeIntegrityPassed;
     }).length;
     const report: RuntimeDualWriteExperimentReport = {
-      contract_version: "aionis_runtime_dual_write_experiment_report_v1",
+      contract_version: "aionis_runtime_dual_write_experiment_report_v2",
       generated_at: new Date().toISOString(),
       runtime_root: args.runtimeRoot,
       runtime_base_url: handle.baseUrl,
@@ -672,13 +862,19 @@ async function main(): Promise<void> {
       runtime_replay_db_path: handle.replayDbPath,
       substrate_db_path: substratePath,
       scenario_count: scenarioReports.length,
+      fixed_scenario_count: fixedScenarios.length,
+      generated_scenario_count: generated.length,
       exact_scenario_count: exactScenarioCount,
       persisted_exact_scenario_count: persistedExactScenarioCount,
+      write_integrity_pass_count: writeIntegrityPassCount,
       failed_scenario_count: failedScenarioCount,
       max_per_bucket: args.maxPerBucket ?? null,
+      seed: args.seed,
       notes: [
         "This experiment runs real focused Runtime observe/guide/feedback/measure calls.",
         "Substrate is written as an external sidecar using the same observed memory ids and outcomes.",
+        "Generated scenarios are deterministic from the recorded seed and do not mutate Runtime policy.",
+        "Write integrity probes verify invalid sidecar relation/feedback writes do not append partial events.",
         "This is not Runtime storage replacement and does not mutate AionisRuntime-focused source code.",
       ],
       scenarios: scenarioReports,
@@ -691,8 +887,11 @@ async function main(): Promise<void> {
       runtime_write_sqlite_path: handle.writeDbPath,
       substrate_db_path: substratePath,
       scenario_count: report.scenario_count,
+      fixed_scenario_count: report.fixed_scenario_count,
+      generated_scenario_count: report.generated_scenario_count,
       exact_scenario_count: report.exact_scenario_count,
       persisted_exact_scenario_count: report.persisted_exact_scenario_count,
+      write_integrity_pass_count: report.write_integrity_pass_count,
       failed_scenario_count: report.failed_scenario_count,
     }, null, 2));
     if (report.failed_scenario_count > 0) process.exitCode = 1;

@@ -26,7 +26,8 @@ The runner executes this loop for each scenario:
 8. Call `store.compileContext` for the same scope and compare Substrate surfaces.
 9. Call `execution.feedbackFromOutcome` and `execution.measureRun`.
 10. Write matching Substrate feedback.
-11. Close and reopen Substrate, then compare persisted surfaces again.
+11. Probe invalid Substrate relation/feedback writes and verify no partial events are appended.
+12. Close and reopen Substrate, then compare persisted surfaces again.
 
 The compared surfaces are:
 
@@ -39,13 +40,16 @@ The compared surfaces are:
 
 ```bash
 npm run check:runtime-dual-write -- \
-  --runtime-root /Volumes/ziel/AionisRuntime-focused
+  --runtime-root /Volumes/ziel/AionisRuntime-focused \
+  --generated-count 8
 ```
 
 Optional flags:
 
 ```bash
 --scenario-count 4
+--generated-count 24
+--seed runtime-dual-write-v2
 --max-per-bucket 8
 --output-dir reports/runtime-dual-write-manual
 ```
@@ -67,6 +71,8 @@ The report includes:
 - Substrate compiled surfaces
 - per-bucket parity details
 - Substrate event counts
+- generated/fixed scenario counts
+- invalid write rollback probes
 - persisted parity after close/reopen
 
 ## Boundary

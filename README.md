@@ -147,10 +147,11 @@ Runtime dual-write sidecar experiment:
 
 ```bash
 npm run check:runtime-dual-write -- \
-  --runtime-root /path/to/AionisRuntime-focused
+  --runtime-root /path/to/AionisRuntime-focused \
+  --generated-count 8
 ```
 
-This starts focused Runtime with isolated Lite SQLite paths, calls real `observe -> guide -> feedback -> measure`, writes the same observed memory ids and outcomes into a separate Substrate SQLite store, compares guide buckets, closes and reopens Substrate, and compares again. It does not mutate focused Runtime source code or replace Runtime storage.
+This starts focused Runtime with isolated Lite SQLite paths, calls real `observe -> guide -> feedback -> measure`, writes the same observed memory ids and outcomes into a separate Substrate SQLite store, compares guide buckets, closes and reopens Substrate, and compares again. It can add deterministic generated scenarios with `--generated-count` and records sidecar write-integrity probes for invalid relation/feedback writes. It does not mutate focused Runtime source code or replace Runtime storage.
 
 ## Development Checks
 
