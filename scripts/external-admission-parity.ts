@@ -22,6 +22,8 @@ type Args = {
   runtimeRoot: string;
   outputDir: string;
   maxPerBucket?: number;
+  generatedCount: number;
+  seed: string;
 };
 
 type RuntimeHandle = {
@@ -95,9 +97,12 @@ type ExternalAdmissionParityReport = {
   runtime_write_db_path: string;
   runtime_replay_db_path: string;
   scenario_count: number;
+  base_scenario_count: number;
+  generated_scenario_count: number;
   exact_scenario_count: number;
   failed_scenario_count: number;
   max_per_bucket: number | null;
+  seed: string;
   notes: string[];
   scenarios: ScenarioReport[];
 };
@@ -107,7 +112,7 @@ const BUCKETS: AionisAdmissionAction[] = ["use_now", "inspect_before_use", "do_n
 function usage(): string {
   return [
     "Usage:",
-    "  npm run check:external-admission-parity -- --runtime-root /path/AionisRuntime-focused",
+    "  npm run check:external-admission-parity -- --runtime-root /path/AionisRuntime-focused [--generated-count 24]",
     "",
     "Starts focused Runtime in local Lite mode, calls the real /v1/memory/govern product path,",
     "projects the same external candidates into Aionis Substrate, then compares the four admission buckets.",
@@ -133,6 +138,16 @@ function parseArgs(argv: string[]): Args {
       if (!Number.isInteger(parsed) || parsed < 0) throw new Error("--max-per-bucket must be a non-negative integer");
       args.maxPerBucket = parsed;
       i += 1;
+    } else if (flag === "--generated-count") {
+      if (!value) throw new Error("--generated-count requires a value");
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed < 0) throw new Error("--generated-count must be a non-negative integer");
+      args.generatedCount = parsed;
+      i += 1;
+    } else if (flag === "--seed") {
+      if (!value) throw new Error("--seed requires a value");
+      args.seed = value;
+      i += 1;
     } else if (flag === "--help" || flag === "-h") {
       console.log(usage());
       process.exit(0);
@@ -145,6 +160,8 @@ function parseArgs(argv: string[]): Args {
     runtimeRoot: args.runtimeRoot,
     outputDir: args.outputDir ?? resolve("reports", `external-admission-parity-${new Date().toISOString().replace(/[:.]/g, "-")}`),
     maxPerBucket: args.maxPerBucket,
+    generatedCount: args.generatedCount ?? 24,
+    seed: args.seed ?? "external-admission-parity-v2",
   };
 }
 
@@ -850,6 +867,204 @@ function buildScenarios(): Scenario[] {
   ];
 }
 
+function hashSeed(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function createRng(seed: string): () => number {
+  let state = hashSeed(seed) || 1;
+  return () => {
+    state += 0x6D2B79F5;
+    let next = state;
+    next = Math.imul(next ^ (next >>> 15), next | 1);
+    next ^= next + Math.imul(next ^ (next >>> 7), next | 61);
+    return ((next ^ (next >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function pick<T>(rng: () => number, values: readonly T[]): T {
+  return values[Math.floor(rng() * values.length)] as T;
+}
+
+type GeneratedDomain = {
+  name: string;
+  target: string;
+  activeText: (target: string) => string;
+  inspectText: (target: string) => string;
+  blockedText: (target: string, lifecycle: ExternalCandidate["lifecycle_hint"]) => string;
+  payloadText: (target: string) => string;
+  useKind: AionisMemoryKind;
+  reviewKind: AionisMemoryKind;
+  memoryType: string;
+};
+
+const GENERATED_DOMAINS: GeneratedDomain[] = [
+  {
+    name: "execution-route",
+    target: "src/generated/route.ts",
+    activeText: (target) => `Current route for ${target} is accepted for the next turn.`,
+    inspectText: (target) => `Review queue note for ${target} remains relevant to the current route.`,
+    blockedText: (target, lifecycle) => `${lifecycle} route note for ${target} must stay out of direct context.`,
+    payloadText: (target) => `Raw verifier output for ${target} is available behind a payload hook.`,
+    useKind: "execution",
+    reviewKind: "procedure",
+    memoryType: "execution_memory",
+  },
+  {
+    name: "procedure",
+    target: "src/generated/procedure.ts",
+    activeText: (target) => `Procedure for ${target}: update the read model, run replay, then record the outcome.`,
+    inspectText: (target) => `Procedure review note for ${target} can help after inspection.`,
+    blockedText: (target, lifecycle) => `${lifecycle} procedure note for ${target} is not allowed to steer the next turn.`,
+    payloadText: (target) => `Full procedure transcript for ${target} can be recovered as raw evidence.`,
+    useKind: "procedure",
+    reviewKind: "procedure",
+    memoryType: "procedure",
+  },
+  {
+    name: "general-preference",
+    target: "",
+    activeText: () => "Project preference: keep release notes concise unless the user asks for a full changelog.",
+    inspectText: () => "Team note: an alternate release note style may help after review.",
+    blockedText: (_target, lifecycle) => `${lifecycle} preference note conflicts with the current project preference and must not steer the answer.`,
+    payloadText: () => "Raw preference discussion can be restored if the host needs the original wording.",
+    useKind: "preference",
+    reviewKind: "fact",
+    memoryType: "preference",
+  },
+  {
+    name: "handoff-state",
+    target: "src/generated/handoff.ts",
+    activeText: (target) => `Current handoff state for ${target} identifies the accepted route and pending verifier.`,
+    inspectText: (target) => `Handoff side note for ${target} should be reviewed before use.`,
+    blockedText: (target, lifecycle) => `${lifecycle} handoff note for ${target} points to a discarded branch.`,
+    payloadText: (target) => `Full handoff log for ${target} is available as a payload reference.`,
+    useKind: "execution",
+    reviewKind: "fact",
+    memoryType: "execution_memory",
+  },
+];
+
+const BLOCKED_HINTS: Array<"failed" | "stale" | "contested" | "suppressed"> = ["failed", "stale", "contested", "suppressed"];
+
+function targetFilesForGenerated(target: string): string[] {
+  return target ? [target] : [];
+}
+
+function lifecycleForBlockedHint(hint: ExternalCandidate["lifecycle_hint"]): AionisLifecycleState {
+  return hint === "suppressed" ? "suppressed" : "blocked";
+}
+
+function buildGeneratedScenario(index: number, rng: () => number): Scenario {
+  const domain = pick(rng, GENERATED_DOMAINS);
+  const targetSuffix = domain.target ? domain.target.replace(".ts", `-${index}.ts`) : "";
+  const targetFiles = targetFilesForGenerated(targetSuffix);
+  const blockedHint = pick(rng, BLOCKED_HINTS);
+  const reviewTrust = pick(rng, ["known", "trusted"] as const);
+  const prefix = `generated-${String(index + 1).padStart(3, "0")}-${domain.name}`;
+  const activeLifecycle = domain.memoryType === "procedure" ? "procedure" : "current";
+  return {
+    id: prefix,
+    query: `Generated parity scenario ${index + 1}: admit the active ${domain.name} memory, inspect the review note, block unsafe history, and keep raw evidence as rehydrate.`,
+    candidates: [
+      candidate({
+        id: `${prefix}-use`,
+        title: "Generated use candidate",
+        text: domain.activeText(targetSuffix),
+        targetFiles,
+        lifecycle: activeLifecycle,
+        sourceTrust: "trusted",
+        evidenceRequirement: "none",
+        memoryType: domain.memoryType,
+      }),
+      candidate({
+        id: `${prefix}-inspect`,
+        title: "Generated inspect candidate",
+        text: domain.inspectText(targetSuffix),
+        targetFiles,
+        lifecycle: "current",
+        sourceTrust: reviewTrust,
+        evidenceRequirement: "inspect_before_use",
+        memoryType: domain.memoryType === "preference" ? "fact" : "procedure_candidate",
+      }),
+      candidate({
+        id: `${prefix}-blocked`,
+        title: "Generated blocked candidate",
+        text: domain.blockedText(targetSuffix, blockedHint),
+        targetFiles,
+        lifecycle: blockedHint,
+        sourceTrust: "trusted",
+        evidenceRequirement: "none",
+        memoryType: domain.memoryType,
+      }),
+      candidate({
+        id: `${prefix}-rehydrate`,
+        title: "Generated rehydrate candidate",
+        text: domain.payloadText(targetSuffix),
+        targetFiles,
+        lifecycle: "current",
+        sourceTrust: "trusted",
+        evidenceRequirement: "rehydrate_before_use",
+        memoryType: "evidence",
+      }),
+    ],
+    substrateNodes: [
+      projection({
+        id: `${prefix}-use`,
+        kind: domain.useKind,
+        title: "Generated use candidate",
+        summary: domain.activeText(targetSuffix),
+        targetFiles,
+        lifecycle: "active",
+        authority: "trusted",
+        confidence: 0.9,
+      }),
+      projection({
+        id: `${prefix}-inspect`,
+        kind: domain.reviewKind,
+        title: "Generated inspect candidate",
+        summary: domain.inspectText(targetSuffix),
+        targetFiles,
+        lifecycle: "candidate",
+        authority: "advisory",
+        confidence: 0.6,
+      }),
+      projection({
+        id: `${prefix}-blocked`,
+        kind: domain.useKind === "preference" ? "preference" : "execution",
+        title: "Generated blocked candidate",
+        summary: domain.blockedText(targetSuffix, blockedHint),
+        targetFiles,
+        lifecycle: lifecycleForBlockedHint(blockedHint),
+        authority: "rejected",
+        confidence: 0.15,
+        metadata: { external_lifecycle_hint: blockedHint },
+      }),
+      projection({
+        id: `${prefix}-rehydrate`,
+        kind: "trace_pointer",
+        title: "Generated rehydrate candidate",
+        summary: domain.payloadText(targetSuffix),
+        targetFiles,
+        lifecycle: "rehydrate_required",
+        authority: "trusted",
+        confidence: 0.85,
+        payloadRef: `trace://${prefix}-rehydrate`,
+      }),
+    ],
+  };
+}
+
+function buildGeneratedScenarios(count: number, seed: string): Scenario[] {
+  const rng = createRng(seed);
+  return Array.from({ length: count }, (_value, index) => buildGeneratedScenario(index, rng));
+}
+
 function contextSurfaces(context: {
   use_now: Array<{ id: string }>;
   inspect_before_use: Array<{ id: string }>;
@@ -929,7 +1144,9 @@ async function main(): Promise<void> {
     const client = sdk.createAionisClient({ baseUrl: runtime.baseUrl });
     await client.health();
     const scenarios = [];
-    for (const scenario of buildScenarios()) {
+    const baseScenarios = buildScenarios();
+    const generatedScenarios = buildGeneratedScenarios(args.generatedCount, args.seed);
+    for (const scenario of [...baseScenarios, ...generatedScenarios]) {
       scenarios.push(await runScenario({
         scenario,
         client,
@@ -946,12 +1163,16 @@ async function main(): Promise<void> {
       runtime_write_db_path: runtime.writeDbPath,
       runtime_replay_db_path: runtime.replayDbPath,
       scenario_count: scenarios.length,
+      base_scenario_count: baseScenarios.length,
+      generated_scenario_count: generatedScenarios.length,
       exact_scenario_count: exactScenarioCount,
       failed_scenario_count: scenarios.length - exactScenarioCount,
       max_per_bucket: args.maxPerBucket ?? null,
+      seed: args.seed,
       notes: [
         "This runner calls the real focused Runtime external memory governance path.",
         "It validates Substrate's minimum four-bucket admission contract against external candidate admission, not full Aionis Runtime guide policy.",
+        "Generated scenarios are deterministic contract variants, not a benchmark leaderboard.",
         "It does not mutate AionisRuntime-focused source code or Runtime product databases.",
       ],
       scenarios,
@@ -961,8 +1182,11 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({
       report: reportPath,
       scenario_count: report.scenario_count,
+      base_scenario_count: report.base_scenario_count,
+      generated_scenario_count: report.generated_scenario_count,
       exact_scenario_count: report.exact_scenario_count,
       failed_scenario_count: report.failed_scenario_count,
+      seed: report.seed,
       buckets: BUCKETS,
     }, null, 2));
     if (report.failed_scenario_count > 0) process.exitCode = 1;

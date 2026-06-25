@@ -139,7 +139,7 @@ npm run check:external-admission-parity -- \
   --runtime-root /path/to/AionisRuntime-focused
 ```
 
-This starts focused Runtime with isolated Lite SQLite paths, calls the real external memory governance route, projects the same candidate memories into Substrate, and compares `use_now`, `inspect_before_use`, `do_not_use`, and `rehydrate`.
+This starts focused Runtime with isolated Lite SQLite paths, calls the real external memory governance route, projects the same candidate memories into Substrate, and compares `use_now`, `inspect_before_use`, `do_not_use`, and `rehydrate`. The runner includes fixed contract scenarios plus deterministic generated variants; pass `--generated-count` and `--seed` to control the batch.
 
 ## Development Checks
 

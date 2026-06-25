@@ -16,6 +16,15 @@ npm run check:external-admission-parity -- \
   --runtime-root /Volumes/ziel/AionisRuntime-focused
 ```
 
+By default this runs 6 fixed contract scenarios plus 24 deterministic generated variants:
+
+```bash
+npm run check:external-admission-parity -- \
+  --runtime-root /Volumes/ziel/AionisRuntime-focused \
+  --generated-count 100 \
+  --seed external-admission-parity-v2
+```
+
 The runner writes a report under:
 
 ```text
@@ -36,6 +45,8 @@ The runner covers:
 - known-source memory that remains inspect-only under focused Runtime firewall behavior;
 - explicit authority requirements that override otherwise current lifecycle hints.
 
+Generated variants expand these surfaces across execution routes, procedures, handoff state, ordinary preference memory, failed/stale/contested/suppressed negative history, and payload-only evidence. They are deterministic contract variants, not a public benchmark leaderboard.
+
 The focused Runtime route may apply stricter product firewall behavior before bucket emission. For example, an inspect-like external candidate outside the active target cluster can be blocked as `do_not_use`. This runner intentionally keeps fixtures inside the shared external admission contract so the comparison validates Substrate bucket expressiveness instead of forcing full Runtime product policy into the substrate layer.
 
 ## What This Does Not Prove
@@ -51,18 +62,32 @@ It also does not mutate Runtime source code or Runtime product databases. The fo
 The expanded focused Runtime parity run currently produces:
 
 ```text
-scenario_count: 6
-exact_scenario_count: 6
+scenario_count: 30
+base_scenario_count: 6
+generated_scenario_count: 24
+exact_scenario_count: 30
 failed_scenario_count: 0
+seed: external-admission-parity-v2
 ```
 
 Report:
 
 ```text
-reports/external-admission-parity-2026-06-25T13-55-46-261Z/summary.json
+reports/external-admission-parity-2026-06-25T14-01-55-065Z/summary.json
 ```
 
 Reports are generated artifacts and are not committed by default.
+
+A larger smoke run also passed:
+
+```text
+scenario_count: 106
+base_scenario_count: 6
+generated_scenario_count: 100
+exact_scenario_count: 106
+failed_scenario_count: 0
+seed: external-admission-parity-v2-large
+```
 
 ## Why This Exists
 
