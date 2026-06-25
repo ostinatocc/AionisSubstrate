@@ -364,6 +364,146 @@ function createRuntimeLiteFixture(path: string): void {
   db.close();
 }
 
+function insertRuntimeProductOutcomeRows(path: string): void {
+  const db = new DatabaseSync(path);
+  const insertNode = db.prepare(`
+    INSERT INTO lite_memory_nodes (
+      id, scope, client_id, type, tier, title, text_summary, slots_json, raw_ref, evidence_ref,
+      embedding_vector_json, embedding_model, memory_lane, producer_agent_id, owner_agent_id,
+      owner_team_id, embedding_status, embedding_last_error, salience, importance, confidence,
+      redaction_version, commit_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  insertNode.run(
+    "runtime-passed-advisory",
+    "repo-a",
+    "client-passed-advisory",
+    "procedure",
+    "hot",
+    "Accepted current runtime route",
+    "Current route: continue src/runtime/current-route.ts; verifier passed.",
+    JSON.stringify({
+      summary_kind: "workflow_anchor",
+      memory_kind: "execution_workflow",
+      execution_result_summary: { status: "passed" },
+      execution_observation_v1: {
+        outcome: "succeeded",
+        execution_outcome_role: "passed_solution",
+      },
+      execution_native_v1: {
+        summary_kind: "workflow_anchor",
+        execution_outcome_role: "passed_solution",
+        contract_trust: "advisory",
+        target_files: ["src/runtime/current-route.ts"],
+      },
+      execution_contract_v1: {
+        contract_trust: "advisory",
+        target_files: ["src/runtime/current-route.ts"],
+      },
+    }),
+    null,
+    null,
+    null,
+    "fixture-embedding",
+    "shared",
+    "agent-writer",
+    "agent-owner",
+    "team-a",
+    "ready",
+    null,
+    0.9,
+    0.9,
+    0.96,
+    1,
+    "commit-product",
+    "2026-06-04T00:00:00.000Z",
+  );
+
+  insertNode.run(
+    "runtime-failed-advisory",
+    "repo-a",
+    "client-failed-advisory",
+    "procedure",
+    "hot",
+    "Rejected legacy route",
+    "Failed branch: src/runtime/failed-legacy-route.ts failed verifier and must not be direct-use context.",
+    JSON.stringify({
+      summary_kind: "workflow_anchor",
+      memory_kind: "execution_workflow",
+      verification: { passed: false },
+      execution_result_summary: { status: "failed" },
+      execution_observation_v1: {
+        outcome: "failed",
+        execution_outcome_role: "failed_branch",
+      },
+      execution_native_v1: {
+        summary_kind: "workflow_anchor",
+        execution_outcome_role: "failed_branch",
+        contract_trust: "advisory",
+        target_files: ["src/runtime/failed-legacy-route.ts"],
+      },
+      execution_contract_v1: {
+        contract_trust: "advisory",
+        target_files: ["src/runtime/failed-legacy-route.ts"],
+      },
+    }),
+    "trace://repo-a/failed/raw",
+    "evidence://repo-a/failed-route",
+    null,
+    "fixture-embedding",
+    "shared",
+    "agent-writer",
+    "agent-owner",
+    "team-a",
+    "ready",
+    null,
+    0.6,
+    0.7,
+    0.31,
+    1,
+    "commit-product",
+    "2026-06-04T00:01:00.000Z",
+  );
+
+  insertNode.run(
+    "runtime-guide-ledger",
+    "repo-a",
+    "client-guide-ledger",
+    "evidence",
+    "archive",
+    "Guide exposure ledger",
+    "Guide exposure ledger for audit only.",
+    JSON.stringify({
+      summary_kind: "guide_exposure_ledger",
+      not_agent_facing: true,
+      guide_exposure_v1: {
+        not_agent_facing: true,
+        use_now_memory_ids: ["runtime-passed-advisory"],
+        do_not_use_memory_ids: ["runtime-failed-advisory"],
+      },
+      semantic_forgetting_v1: { lifecycle_state: "archived" },
+    }),
+    null,
+    null,
+    null,
+    "fixture-embedding",
+    "shared",
+    "agent-writer",
+    "agent-owner",
+    "team-a",
+    "ready",
+    null,
+    0.4,
+    0.4,
+    1,
+    1,
+    "commit-product",
+    "2026-06-04T00:02:00.000Z",
+  );
+  db.close();
+}
+
 test("imports Runtime Lite snapshot into Substrate without mutating source SQLite", async () => {
   await withSqlitePair(async ({ source, target }) => {
     createRuntimeLiteFixture(source);
@@ -400,6 +540,38 @@ test("imports Runtime Lite snapshot into Substrate without mutating source SQLit
     sourceDb.close();
     assert.equal(substrateTable, undefined);
     assert.equal(sourceNodeCount.count, 5);
+  });
+});
+
+test("maps Runtime product execution outcomes and skips audit-only ledgers", async () => {
+  await withSqlitePair(async ({ source, target }) => {
+    createRuntimeLiteFixture(source);
+    insertRuntimeProductOutcomeRows(source);
+    const store = await openSqliteAionisSubstrate({ path: target });
+    const summary = await importRuntimeLiteSnapshot({ sourcePath: source, target: store, scope: "repo-a" });
+
+    assert.equal(summary.nodesRead, 7);
+    assert.equal(summary.nodesImported, 6);
+    assert.equal(summary.nodesSkipped, 1);
+    assert.ok(summary.warnings.some((warning) => warning.includes("runtime-guide-ledger") && warning.includes("not_agent_facing")));
+
+    const context = await store.compileContext({ scope: "repo-a" });
+    assert.ok(context.use_now.some((node) => node.id === "runtime-passed-advisory"));
+    assert.ok(context.do_not_use.some((node) => node.id === "runtime-failed-advisory"));
+    assert.ok(![
+      ...context.use_now,
+      ...context.inspect_before_use,
+      ...context.do_not_use,
+      ...context.rehydrate,
+    ].some((node) => node.id === "runtime-guide-ledger"));
+
+    const passed = await store.getNode("repo-a", "runtime-passed-advisory");
+    assert.equal(passed?.lifecycle, "active");
+    assert.equal(passed?.authority, "trusted");
+    const failed = await store.getNode("repo-a", "runtime-failed-advisory");
+    assert.equal(failed?.lifecycle, "blocked");
+    assert.equal(failed?.authority, "rejected");
+    await store.close();
   });
 });
 

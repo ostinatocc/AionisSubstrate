@@ -13,7 +13,8 @@
     "bench:contract": "node scripts/substrate-contract-benchmark.ts",
     "check:runtime-snapshot": "node scripts/runtime-snapshot-parity.ts",
     "check:runtime-corpus": "node scripts/runtime-snapshot-corpus.ts",
-    "check:runtime-reference-corpus": "node scripts/runtime-reference-corpus.ts"
+    "check:runtime-reference-corpus": "node scripts/runtime-reference-corpus.ts",
+    "make:runtime-product-reference": "node scripts/runtime-product-reference-fixture.ts"
   },
   "engines": {
     "node": ">=24"

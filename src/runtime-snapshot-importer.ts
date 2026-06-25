@@ -138,6 +138,8 @@ type RuntimeImportState = {
   executionIndex: Map<string, RuntimeExecutionIndexRow>;
 };
 
+type RuntimeExecutionOutcome = "passed" | "failed" | null;
+
 function scopeKey(scope: string, id: string): string {
   return `${scope}\u0000${id}`;
 }
@@ -210,6 +212,14 @@ function firstStringAt(record: Record<string, unknown>, paths: string[][]): stri
   return null;
 }
 
+function firstBooleanAt(record: Record<string, unknown>, paths: string[][]): boolean | null {
+  for (const path of paths) {
+    const value = valueAt(record, path);
+    if (typeof value === "boolean") return value;
+  }
+  return null;
+}
+
 function stringsAt(record: Record<string, unknown>, paths: string[][]): string[] {
   const out: string[] = [];
   for (const path of paths) {
@@ -225,6 +235,14 @@ function stringsAt(record: Record<string, unknown>, paths: string[][]): string[]
   return Array.from(new Set(out));
 }
 
+function hasTruthyAt(record: Record<string, unknown>, paths: string[][]): boolean {
+  for (const path of paths) {
+    const value = valueAt(record, path);
+    if (value === true) return true;
+  }
+  return false;
+}
+
 function normalizeLifecycle(value: string | null): AionisLifecycleState | null {
   const token = normalizeToken(value);
   if (!token) return null;
@@ -237,6 +255,68 @@ function normalizeLifecycle(value: string | null): AionisLifecycleState | null {
   if (token === "blocked" || token === "do_not_use" || token === "invalid" || token === "rejected") return "blocked";
   if (token === "rehydrate" || token === "rehydrate_required" || token === "payload_required") return "rehydrate_required";
   return null;
+}
+
+function runtimeTokenIndicatesFailed(token: string): boolean {
+  return token === "failed"
+    || token === "failure"
+    || token === "fail"
+    || token === "failed_branch"
+    || token === "rejected_branch"
+    || token === "invalid"
+    || token.includes("failed")
+    || token.includes("failure")
+    || token.includes("failed_branch");
+}
+
+function runtimeTokenIndicatesPassed(token: string): boolean {
+  return token === "passed"
+    || token === "pass"
+    || token === "succeeded"
+    || token === "success"
+    || token === "passed_solution"
+    || token === "accepted_solution"
+    || token === "verified"
+    || token.includes("passed")
+    || token.includes("succeeded")
+    || token.includes("passed_solution");
+}
+
+function deriveRuntimeExecutionOutcome(
+  slots: JsonObject,
+  executionIndex: RuntimeExecutionIndexRow | undefined,
+): RuntimeExecutionOutcome {
+  const passedBoolean = firstBooleanAt(slots, [
+    ["verification", "passed"],
+    ["execution_native_v1", "verification", "passed"],
+    ["execution_contract_v1", "verification", "passed"],
+  ]);
+  if (passedBoolean === false) return "failed";
+
+  const tokens = [
+    firstStringAt(slots, [["execution_result_summary", "status"]]),
+    firstStringAt(slots, [["execution_observation_v1", "outcome"]]),
+    firstStringAt(slots, [["execution_observation_v1", "execution_outcome_role"]]),
+    firstStringAt(slots, [["execution_native_v1", "execution_outcome_role"]]),
+    firstStringAt(slots, [["execution_contract_v1", "execution_outcome_role"]]),
+    executionIndex?.pattern_state ?? null,
+    executionIndex?.failure_mode ?? null,
+    executionIndex?.verification_signature ?? null,
+  ].map(normalizeToken).filter(Boolean);
+
+  if (tokens.some(runtimeTokenIndicatesFailed)) return "failed";
+  if (passedBoolean === true) return "passed";
+  if (tokens.some(runtimeTokenIndicatesPassed)) return "passed";
+  return null;
+}
+
+function isRuntimeAuditOnlyNode(slots: JsonObject): boolean {
+  return hasTruthyAt(slots, [
+    ["not_agent_facing"],
+    ["guide_exposure_v1", "not_agent_facing"],
+    ["product_measure_v1", "not_agent_facing"],
+    ["runtime_audit_v1", "not_agent_facing"],
+  ]);
 }
 
 function normalizeAuthority(value: string | null): AionisAuthorityState | null {
@@ -271,8 +351,15 @@ function deriveKind(row: RuntimeNodeRow, slots: JsonObject): AionisMemoryKind {
   return "fact";
 }
 
-function deriveAuthority(row: RuntimeNodeRow, slots: JsonObject, lifecycle: AionisLifecycleState | null): AionisAuthorityState {
+function deriveAuthority(
+  row: RuntimeNodeRow,
+  slots: JsonObject,
+  lifecycle: AionisLifecycleState | null,
+  executionOutcome: RuntimeExecutionOutcome,
+): AionisAuthorityState {
   if (lifecycle === "suppressed" || lifecycle === "retired" || lifecycle === "blocked") return "rejected";
+  if (executionOutcome === "failed") return "rejected";
+  if (executionOutcome === "passed" && row.confidence >= 0.55) return "trusted";
   const explicit = normalizeAuthority(firstStringAt(slots, [
     ["authority"],
     ["authority_state"],
@@ -292,7 +379,12 @@ function deriveAuthority(row: RuntimeNodeRow, slots: JsonObject, lifecycle: Aion
   return "unknown";
 }
 
-function deriveLifecycle(row: RuntimeNodeRow, slots: JsonObject, authority: AionisAuthorityState): AionisLifecycleState {
+function deriveLifecycle(
+  row: RuntimeNodeRow,
+  slots: JsonObject,
+  authority: AionisAuthorityState,
+  executionOutcome: RuntimeExecutionOutcome,
+): AionisLifecycleState {
   const explicit = normalizeLifecycle(firstStringAt(slots, [
     ["lifecycle"],
     ["lifecycle_state"],
@@ -303,6 +395,12 @@ function deriveLifecycle(row: RuntimeNodeRow, slots: JsonObject, authority: Aion
     ["workflow_promotion", "promotion_state"],
     ["execution_native_v1", "workflow_promotion", "promotion_state"],
   ]));
+  if (explicit === "suppressed" || explicit === "retired" || explicit === "blocked" || explicit === "archived" || explicit === "rehydrate_required") {
+    return explicit;
+  }
+
+  if (executionOutcome === "failed") return "blocked";
+  if (executionOutcome === "passed") return "active";
   if (explicit) return explicit;
 
   const tier = normalizeToken(row.tier);
@@ -357,9 +455,14 @@ function metadataForNode(row: RuntimeNodeRow, slots: JsonObject, executionIndex:
 
 function mapNode(row: RuntimeNodeRow, executionIndex: RuntimeExecutionIndexRow | undefined, warnings: string[]): AionisMemoryNodeInput | null {
   const slots = parseObject(row.slots_json, warnings, `node ${row.id} slots_json`);
-  const authorityProbe = deriveAuthority(row, slots, null);
-  const lifecycle = deriveLifecycle(row, slots, authorityProbe);
-  const authority = deriveAuthority(row, slots, lifecycle);
+  if (isRuntimeAuditOnlyNode(slots)) {
+    warnings.push(`node ${row.id}: skipped because Runtime marked it not_agent_facing`);
+    return null;
+  }
+  const executionOutcome = deriveRuntimeExecutionOutcome(slots, executionIndex);
+  const authorityProbe = deriveAuthority(row, slots, null, executionOutcome);
+  const lifecycle = deriveLifecycle(row, slots, authorityProbe, executionOutcome);
+  const authority = deriveAuthority(row, slots, lifecycle, executionOutcome);
   const summary = row.text_summary?.trim() || row.title?.trim();
   if (!summary) {
     warnings.push(`node ${row.id}: skipped because title/text_summary are empty`);

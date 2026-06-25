@@ -63,3 +63,32 @@ That means the current `docs/examples` files are useful product examples, but
 they are not current real Runtime reference parity artifacts for the local
 SQLite corpus. A future real parity run should export guide/measure JSON from
 the same Runtime database snapshot that is supplied as `--source-root`.
+
+## Same-source reference fixture
+
+Use `make:runtime-product-reference` to create a same-source artifact pair:
+
+1. start `AionisRuntime-focused` as a local Lite Runtime;
+2. force its write/replay SQLite files into the output directory;
+3. run a real `/v1/observe -> /v1/guide -> /v1/feedback -> /v1/measure`
+   product loop through the Runtime SDK;
+4. write `reference.json` containing the returned `agent_context` and
+   `memory_decision_trace`;
+5. run `check:runtime-reference-corpus` against that exact SQLite/reference pair.
+
+```bash
+npm run make:runtime-product-reference -- \
+  --runtime-root /Volumes/ziel/AionisRuntime-focused
+```
+
+Outputs are written to `reports/runtime-product-reference-*/`:
+
+- `runtime-write.sqlite`
+- `runtime-replay.sqlite`
+- `reference.json`
+- `parity-summary.json`
+- `run-summary.json`
+
+This command is intentionally outside Runtime core. It creates a traceable
+reference artifact for Substrate parity; it does not mutate the focused Runtime
+repository and does not use `docs/examples` as evidence.

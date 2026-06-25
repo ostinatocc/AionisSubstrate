@@ -27,6 +27,16 @@ This document maps current Aionis Runtime product capabilities onto the Substrat
 | Decision trace | `memory.decision.recorded` |
 | Outcome attribution | `memory.feedback.recorded` |
 
+Runtime product snapshot imports also preserve two agent-facing boundaries:
+
+- execution outcome contracts can override weak textual trust. A succeeded
+  execution observation such as `passed_solution` becomes active/trusted
+  substrate memory, while a failed branch or failed verifier becomes
+  blocked/rejected memory.
+- audit-only nodes marked `not_agent_facing` are skipped by the agent-facing
+  snapshot importer. Guide exposure ledgers and measure receipts remain Runtime
+  audit evidence; they must not become rehydrate hooks in compiled Agent context.
+
 ## Admission Boundary
 
 Runtime currently owns the richer product policy. Substrate owns the minimum storage-level contract:
