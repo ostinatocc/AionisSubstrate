@@ -59,6 +59,16 @@ Optional flags:
 --output-dir reports/runtime-dual-write-manual
 ```
 
+Sustained soak example:
+
+```bash
+npm run check:runtime-dual-write -- \
+  --runtime-root /Volumes/ziel/AionisRuntime-focused \
+  --generated-count 96 \
+  --chain-probe-count 16 \
+  --concurrency 8
+```
+
 ## Report
 
 The runner writes:
@@ -80,6 +90,9 @@ The report includes:
 - invalid write rollback probes
 - chain probe counts for lifecycle transitions, supersession, invalidation, support, and payload relations
 - persisted parity after close/reopen
+- scenario, chain-probe, and reopen latency summaries
+- append-only event sequence continuity
+- Substrate and focused Runtime SQLite file sizes
 
 ## Chain Probes
 
@@ -94,6 +107,17 @@ Each probe writes:
 - one raw payload pointer that requires rehydration
 
 The probe then compiles context, compares the four admission buckets, closes and reopens the SQLite store, and compares again. This validates the substrate relation and lifecycle contract without adding benchmark-specific policy to focused Runtime.
+
+## Soak Metrics
+
+The report `soak` object is for sustained sidecar checks:
+
+- `scenario_latency`: p50/p95/max latency for real Runtime sidecar scenarios.
+- `chain_probe_latency`: p50/p95/max latency for Substrate-only lifecycle/relation probes.
+- `reopen_latency`: p50/p95/max latency for persisted scenario checks after closing and reopening SQLite.
+- `chain_probe_reopen_latency`: persisted chain probe reopen latency.
+- `event_sequence`: verifies append-only event sequence continuity, duplicate count, and gap count.
+- `db_sizes`: records Substrate SQLite/WAL/SHM file sizes and focused Runtime Lite SQLite file sizes.
 
 ## Boundary
 

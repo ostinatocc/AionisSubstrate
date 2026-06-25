@@ -155,6 +155,18 @@ npm run check:runtime-dual-write -- \
 
 This starts focused Runtime with isolated Lite SQLite paths, calls real `observe -> guide -> feedback -> measure`, writes the same observed memory ids and outcomes into a separate Substrate SQLite store, compares guide buckets, closes and reopens Substrate, and compares again. It can add deterministic generated scenarios with `--generated-count`, run independent scopes concurrently with `--concurrency`, and record sidecar write-integrity plus lifecycle/relation chain probes. It does not mutate focused Runtime source code or replace Runtime storage.
 
+Sustained sidecar soak:
+
+```bash
+npm run check:runtime-dual-write -- \
+  --runtime-root /path/to/AionisRuntime-focused \
+  --generated-count 96 \
+  --chain-probe-count 16 \
+  --concurrency 8
+```
+
+The soak report includes per-scenario latency summaries, chain-probe latency, reopen latency, event-sequence continuity, and SQLite file sizes.
+
 ## Development Checks
 
 ```bash

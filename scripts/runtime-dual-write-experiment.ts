@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import net from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -65,6 +65,7 @@ type DualWriteScenario = {
 type ScenarioReport = {
   scenario_id: string;
   scenario_source: "fixed" | "generated";
+  latency_ms: number;
   scope: string;
   run_id: string;
   runtime_memory_ids: {
@@ -90,6 +91,7 @@ type ScenarioReport = {
 type ReopenReport = {
   scenario_id: string;
   scope: string;
+  latency_ms: number;
   persisted_surfaces: RuntimeReferenceSurfaces;
   parity: {
     exact: boolean;
@@ -100,6 +102,7 @@ type ReopenReport = {
 type ChainProbeReport = {
   probe_id: string;
   scope: string;
+  latency_ms: number;
   expected_surfaces: RuntimeReferenceSurfaces;
   substrate_surfaces: RuntimeReferenceSurfaces;
   parity: {
@@ -114,6 +117,7 @@ type ChainProbeReport = {
 type ChainProbeReopenReport = {
   probe_id: string;
   scope: string;
+  latency_ms: number;
   persisted_surfaces: RuntimeReferenceSurfaces;
   parity: {
     exact: boolean;
@@ -121,8 +125,34 @@ type ChainProbeReopenReport = {
   };
 };
 
+type LatencySummary = {
+  count: number;
+  min_ms: number;
+  p50_ms: number;
+  p95_ms: number;
+  max_ms: number;
+  avg_ms: number;
+};
+
+type EventSequenceReport = {
+  event_count: number;
+  first_sequence: number | null;
+  last_sequence: number | null;
+  contiguous: boolean;
+  duplicate_count: number;
+  gap_count: number;
+};
+
+type DbSizeReport = {
+  substrate_sqlite_bytes: number;
+  substrate_wal_bytes: number;
+  substrate_shm_bytes: number;
+  runtime_write_sqlite_bytes: number;
+  runtime_replay_sqlite_bytes: number;
+};
+
 type RuntimeDualWriteExperimentReport = {
-  contract_version: "aionis_runtime_dual_write_experiment_report_v3";
+  contract_version: "aionis_runtime_dual_write_experiment_report_v4";
   generated_at: string;
   runtime_root: string;
   runtime_base_url: string;
@@ -143,6 +173,15 @@ type RuntimeDualWriteExperimentReport = {
   max_per_bucket: number | null;
   concurrency: number;
   seed: string;
+  soak: {
+    total_elapsed_ms: number;
+    scenario_latency: LatencySummary;
+    chain_probe_latency: LatencySummary;
+    reopen_latency: LatencySummary;
+    chain_probe_reopen_latency: LatencySummary;
+    event_sequence: EventSequenceReport;
+    db_sizes: DbSizeReport;
+  };
   notes: string[];
   scenarios: ScenarioReport[];
   reopen: ReopenReport[];
@@ -382,6 +421,97 @@ function generatedScenarios(count: number, seed: string): DualWriteScenario[] {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+}
+
+function roundMs(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+function latencySummary(values: number[]): LatencySummary {
+  if (values.length === 0) {
+    return { count: 0, min_ms: 0, p50_ms: 0, p95_ms: 0, max_ms: 0, avg_ms: 0 };
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const sum = sorted.reduce((acc, value) => acc + value, 0);
+  const percentile = (p: number): number => {
+    const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
+    return roundMs(sorted[index] ?? 0);
+  };
+  return {
+    count: sorted.length,
+    min_ms: roundMs(sorted[0] ?? 0),
+    p50_ms: percentile(50),
+    p95_ms: percentile(95),
+    max_ms: roundMs(sorted[sorted.length - 1] ?? 0),
+    avg_ms: roundMs(sum / sorted.length),
+  };
+}
+
+function eventSequenceReport(events: AionisEvent[]): EventSequenceReport {
+  if (events.length === 0) {
+    return {
+      event_count: 0,
+      first_sequence: null,
+      last_sequence: null,
+      contiguous: true,
+      duplicate_count: 0,
+      gap_count: 0,
+    };
+  }
+  const sequences = events.map((event) => event.sequence).sort((a, b) => a - b);
+  const seen = new Set<number>();
+  let duplicateCount = 0;
+  let gapCount = 0;
+  for (const sequence of sequences) {
+    if (seen.has(sequence)) duplicateCount += 1;
+    seen.add(sequence);
+  }
+  for (let i = 1; i < sequences.length; i += 1) {
+    const previous = sequences[i - 1] ?? 0;
+    const current = sequences[i] ?? 0;
+    if (current > previous + 1) gapCount += current - previous - 1;
+  }
+  const first = sequences[0] ?? null;
+  const last = sequences[sequences.length - 1] ?? null;
+  return {
+    event_count: events.length,
+    first_sequence: first,
+    last_sequence: last,
+    contiguous: duplicateCount === 0 && gapCount === 0 && first === 1 && last === events.length,
+    duplicate_count: duplicateCount,
+    gap_count: gapCount,
+  };
+}
+
+async function fileSize(path: string): Promise<number> {
+  try {
+    return (await stat(path)).size;
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "ENOENT") return 0;
+    throw err;
+  }
+}
+
+async function dbSizeReport(args: {
+  substratePath: string;
+  runtimeWritePath: string;
+  runtimeReplayPath: string;
+}): Promise<DbSizeReport> {
+  const [substrate, substrateWal, substrateShm, runtimeWrite, runtimeReplay] = await Promise.all([
+    fileSize(args.substratePath),
+    fileSize(`${args.substratePath}-wal`),
+    fileSize(`${args.substratePath}-shm`),
+    fileSize(args.runtimeWritePath),
+    fileSize(args.runtimeReplayPath),
+  ]);
+  return {
+    substrate_sqlite_bytes: substrate,
+    substrate_wal_bytes: substrateWal,
+    substrate_shm_bytes: substrateShm,
+    runtime_write_sqlite_bytes: runtimeWrite,
+    runtime_replay_sqlite_bytes: runtimeReplay,
+  };
 }
 
 async function findFreePort(): Promise<number> {
@@ -645,6 +775,7 @@ async function runScenario(input: {
   scenario: DualWriteScenario;
   scenarioSource: ScenarioReport["scenario_source"];
 }): Promise<ScenarioReport> {
+  const startedAt = Date.now();
   const { args, sdk, handle, store, scenario, scenarioSource } = input;
   const runId = `substrate-dual-write-${scenario.id}-${randomUUID().slice(0, 8)}`;
   const scope = `substrate-dual-write:${scenario.id}:${runId}`;
@@ -820,6 +951,7 @@ async function runScenario(input: {
   return {
     scenario_id: scenario.id,
     scenario_source: scenarioSource,
+    latency_ms: Date.now() - startedAt,
     scope,
     run_id: runId,
     runtime_memory_ids: {
@@ -848,6 +980,7 @@ async function runReopenCheck(input: {
   try {
     const reports: ReopenReport[] = [];
     for (const scenario of input.scenarios) {
+      const startedAt = Date.now();
       const compiled = await store.compileContext({
         scope: scenario.scope,
         query: `reopen check for ${scenario.scenario_id}`,
@@ -858,6 +991,7 @@ async function runReopenCheck(input: {
       reports.push({
         scenario_id: scenario.scenario_id,
         scope: scenario.scope,
+        latency_ms: Date.now() - startedAt,
         persisted_surfaces: persistedSurfaces,
         parity: {
           exact: bucketReports.every((bucket) => bucket.exact),
@@ -876,6 +1010,7 @@ async function runChainProbe(input: {
   probeId: string;
   maxPerBucket?: number;
 }): Promise<ChainProbeReport> {
+  const startedAt = Date.now();
   const scope = `substrate-chain-probe:${input.probeId}:${randomUUID().slice(0, 8)}`;
   const currentId = `${input.probeId}:current`;
   const priorId = `${input.probeId}:prior`;
@@ -1000,6 +1135,7 @@ async function runChainProbe(input: {
   return {
     probe_id: input.probeId,
     scope,
+    latency_ms: Date.now() - startedAt,
     expected_surfaces: expectedSurfaces,
     substrate_surfaces: substrateSurfaces,
     parity: {
@@ -1023,6 +1159,7 @@ async function runReopenChainProbeCheck(input: {
   try {
     const reports: ChainProbeReopenReport[] = [];
     for (const probe of input.chainProbes) {
+      const startedAt = Date.now();
       const compiled = await store.compileContext({
         scope: probe.scope,
         query: `reopen chain probe ${probe.probe_id}`,
@@ -1033,6 +1170,7 @@ async function runReopenChainProbeCheck(input: {
       reports.push({
         probe_id: probe.probe_id,
         scope: probe.scope,
+        latency_ms: Date.now() - startedAt,
         persisted_surfaces: persistedSurfaces,
         parity: {
           exact: bucketReports.every((bucket) => bucket.exact),
@@ -1047,6 +1185,7 @@ async function runReopenChainProbeCheck(input: {
 }
 
 async function main(): Promise<void> {
+  const experimentStartedAt = Date.now();
   const args = parseArgs(process.argv.slice(2));
   await mkdir(args.outputDir, { recursive: true });
   const handle = await startRuntime(args);
@@ -1085,6 +1224,7 @@ async function main(): Promise<void> {
         maxPerBucket: args.maxPerBucket,
       }),
     );
+    const finalEvents = await store.listEvents();
     await store.close();
     const reopenReports = await runReopenCheck({
       substratePath,
@@ -1095,6 +1235,11 @@ async function main(): Promise<void> {
       substratePath,
       chainProbes: chainProbeReports,
       maxPerBucket: args.maxPerBucket,
+    });
+    const dbSizes = await dbSizeReport({
+      substratePath,
+      runtimeWritePath: handle.writeDbPath,
+      runtimeReplayPath: handle.replayDbPath,
     });
 
     const exactScenarioCount = scenarioReports.filter((scenario) => scenario.parity.exact).length;
@@ -1120,7 +1265,7 @@ async function main(): Promise<void> {
       return !probe.parity.exact || !probe.transition_verified || !reopen?.parity.exact;
     }).length;
     const report: RuntimeDualWriteExperimentReport = {
-      contract_version: "aionis_runtime_dual_write_experiment_report_v3",
+      contract_version: "aionis_runtime_dual_write_experiment_report_v4",
       generated_at: new Date().toISOString(),
       runtime_root: args.runtimeRoot,
       runtime_base_url: handle.baseUrl,
@@ -1141,6 +1286,15 @@ async function main(): Promise<void> {
       max_per_bucket: args.maxPerBucket ?? null,
       concurrency: args.concurrency,
       seed: args.seed,
+      soak: {
+        total_elapsed_ms: Date.now() - experimentStartedAt,
+        scenario_latency: latencySummary(scenarioReports.map((scenario) => scenario.latency_ms)),
+        chain_probe_latency: latencySummary(chainProbeReports.map((probe) => probe.latency_ms)),
+        reopen_latency: latencySummary(reopenReports.map((scenario) => scenario.latency_ms)),
+        chain_probe_reopen_latency: latencySummary(chainProbeReopenReports.map((probe) => probe.latency_ms)),
+        event_sequence: eventSequenceReport(finalEvents),
+        db_sizes: dbSizes,
+      },
       notes: [
         "This experiment runs real focused Runtime observe/guide/feedback/measure calls.",
         "Substrate is written as an external sidecar using the same observed memory ids and outcomes.",
@@ -1171,6 +1325,10 @@ async function main(): Promise<void> {
       persisted_chain_probe_pass_count: report.persisted_chain_probe_pass_count,
       failed_scenario_count: report.failed_scenario_count,
       failed_chain_probe_count: report.failed_chain_probe_count,
+      event_sequence_contiguous: report.soak.event_sequence.contiguous,
+      substrate_sqlite_bytes: report.soak.db_sizes.substrate_sqlite_bytes,
+      scenario_p95_ms: report.soak.scenario_latency.p95_ms,
+      total_elapsed_ms: report.soak.total_elapsed_ms,
     }, null, 2));
     if (report.failed_scenario_count > 0 || report.failed_chain_probe_count > 0) process.exitCode = 1;
   } finally {
