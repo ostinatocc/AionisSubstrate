@@ -15,3 +15,10 @@ export {
   type RuntimeSnapshotParityOptions,
   type RuntimeSnapshotParityReport,
 } from "./runtime-snapshot-parity.ts";
+export {
+  runRuntimeSnapshotCorpus,
+  type RuntimeSnapshotCorpusOptions,
+  type RuntimeSnapshotCorpusReport,
+  type RuntimeSnapshotCorpusScopeCandidate,
+  type RuntimeSnapshotCorpusScopeReport,
+} from "./runtime-snapshot-corpus.ts";

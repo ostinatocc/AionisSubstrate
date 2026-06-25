@@ -75,3 +75,15 @@ npm run check:runtime-snapshot -- \
 ```
 
 Add `--reference /path/to/runtime-guide-or-measure.json` to compare Substrate buckets against Runtime `agent_context` / `memory_decision_trace` bucket ids.
+
+Runtime snapshot corpus smoke:
+
+```bash
+npm run check:runtime-corpus -- \
+  --root /path/to/AionisRuntime-focused/.tmp \
+  --max-files 20 \
+  --max-scopes 20 \
+  --max-scopes-per-file 3
+```
+
+This scans Runtime Lite SQLite files read-only, imports selected scopes into temporary Substrate stores, and writes an aggregate report under `reports/runtime-snapshot-corpus-*`.
