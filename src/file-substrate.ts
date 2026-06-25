@@ -1,6 +1,15 @@
 import { mkdir, readFile, rename, writeFile, appendFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
+import {
+  applyAionisEvent,
+  checksumAionisEvents,
+  cloneReplayState,
+  emptyReplayState,
+  eventKey,
+  snapshotFromReplayState,
+  type AionisReplayState,
+} from "./event-log.ts";
 import type {
   AionisAdmissionAction,
   AionisAdmissionDecision,
@@ -16,27 +25,13 @@ import type {
   AionisRelation,
   AionisRelationInput,
   AionisSubstrate,
-  AionisSubstrateSnapshot,
 } from "./types.ts";
 import { AIONIS_SUBSTRATE_SCHEMA_VERSION as CURRENT_SCHEMA_VERSION } from "./types.ts";
-
-type FileSubstrateState = {
-  lastSequence: number;
-  nodes: Map<string, AionisMemoryNode>;
-  relations: Map<string, AionisRelation>;
-  feedback: Map<string, AionisFeedback>;
-  decisions: Map<string, AionisDecisionTrace>;
-  events: AionisEvent[];
-};
 
 export type FileAionisSubstrateOptions = {
   dir: string;
   now?: () => Date;
 };
-
-function key(scope: string, id: string): string {
-  return `${scope}\u0000${id}`;
-}
 
 function requireNonEmpty(value: string, label: string): string {
   const trimmed = value.trim();
@@ -53,84 +48,6 @@ function clampConfidence(value: number): number {
 
 function normalizeStrings(values: string[] | undefined): string[] {
   return Array.from(new Set((values ?? []).map((value) => value.trim()).filter(Boolean)));
-}
-
-function emptyState(): FileSubstrateState {
-  return {
-    lastSequence: 0,
-    nodes: new Map(),
-    relations: new Map(),
-    feedback: new Map(),
-    decisions: new Map(),
-    events: [],
-  };
-}
-
-function cloneState(state: FileSubstrateState): FileSubstrateState {
-  return {
-    lastSequence: state.lastSequence,
-    nodes: new Map(state.nodes),
-    relations: new Map(state.relations),
-    feedback: new Map(state.feedback),
-    decisions: new Map(state.decisions),
-    events: [...state.events],
-  };
-}
-
-function snapshotFromState(state: FileSubstrateState): AionisSubstrateSnapshot {
-  return {
-    version: 1,
-    schemaVersion: CURRENT_SCHEMA_VERSION,
-    lastSequence: state.lastSequence,
-    nodes: Array.from(state.nodes.values()),
-    relations: Array.from(state.relations.values()),
-    feedback: Array.from(state.feedback.values()),
-    decisions: Array.from(state.decisions.values()),
-  };
-}
-
-function validateEvent(state: FileSubstrateState, event: AionisEvent): void {
-  if (event.type === "memory.lifecycle.transition") {
-    const nodeKey = key(event.payload.scope, event.payload.memoryId);
-    if (!state.nodes.has(nodeKey)) throw new Error(`cannot transition missing memory node: ${event.payload.memoryId}`);
-  } else if (event.type === "memory.relation.upsert") {
-    const sourceKey = key(event.payload.scope, event.payload.sourceId);
-    const targetKey = key(event.payload.scope, event.payload.targetId);
-    if (!state.nodes.has(sourceKey)) throw new Error(`cannot relate missing source memory node: ${event.payload.sourceId}`);
-    if (!state.nodes.has(targetKey)) throw new Error(`cannot relate missing target memory node: ${event.payload.targetId}`);
-  } else if (event.type === "memory.feedback.recorded") {
-    const nodeKey = key(event.payload.scope, event.payload.memoryId);
-    if (!state.nodes.has(nodeKey)) throw new Error(`cannot record feedback for missing memory node: ${event.payload.memoryId}`);
-  }
-}
-
-function applyEvent(state: FileSubstrateState, event: AionisEvent): void {
-  validateEvent(state, event);
-  if (event.type === "memory.node.upsert") {
-    state.nodes.set(key(event.payload.scope, event.payload.id), event.payload);
-  } else if (event.type === "memory.lifecycle.transition") {
-    const nodeKey = key(event.payload.scope, event.payload.memoryId);
-    const current = state.nodes.get(nodeKey)!;
-    state.nodes.set(nodeKey, {
-      ...current,
-      lifecycle: event.payload.lifecycle,
-      authority: event.payload.authority ?? current.authority,
-      confidence: event.payload.confidence === undefined ? current.confidence : clampConfidence(event.payload.confidence),
-      updatedAt: event.createdAt,
-      metadata: {
-        ...(current.metadata ?? {}),
-        last_lifecycle_transition_reason: event.payload.reason,
-      },
-    });
-  } else if (event.type === "memory.relation.upsert") {
-    state.relations.set(key(event.payload.scope, event.payload.id), event.payload);
-  } else if (event.type === "memory.feedback.recorded") {
-    state.feedback.set(key(event.payload.scope, event.payload.id), event.payload);
-  } else if (event.type === "memory.decision.recorded") {
-    state.decisions.set(key(event.payload.scope, event.payload.id), event.payload);
-  }
-  state.lastSequence = Math.max(state.lastSequence, event.sequence);
-  state.events.push(event);
 }
 
 async function readEvents(path: string): Promise<AionisEvent[]> {
@@ -168,12 +85,12 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
   const now = options.now ?? (() => new Date());
   const eventsPath = join(dir, "events.jsonl");
   const snapshotPath = join(dir, "snapshot.json");
-  const state = emptyState();
+  const state = emptyReplayState();
   let tail: Promise<unknown> = Promise.resolve();
 
   await mkdir(dir, { recursive: true });
   for (const event of await readEvents(eventsPath)) {
-    applyEvent(state, event);
+    applyAionisEvent(state, event);
   }
   await persistSnapshot();
 
@@ -182,11 +99,27 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
   }
 
   async function persistSnapshot(): Promise<void> {
-    const snapshot = snapshotFromState(state);
+    const snapshot = snapshotFromReplayState(state);
     const tempPath = `${snapshotPath}.tmp-${process.pid}-${randomUUID()}`;
     await mkdir(dirname(snapshotPath), { recursive: true });
     await writeFile(tempPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
     await rename(tempPath, snapshotPath);
+  }
+
+  async function replaceEventLog(events: AionisEvent[]): Promise<void> {
+    const tempPath = `${eventsPath}.tmp-${process.pid}-${randomUUID()}`;
+    await mkdir(dirname(eventsPath), { recursive: true });
+    await writeFile(tempPath, events.map((event) => JSON.stringify(event)).join("\n") + (events.length > 0 ? "\n" : ""), "utf8");
+    await rename(tempPath, eventsPath);
+  }
+
+  function replaceState(next: AionisReplayState): void {
+    state.lastSequence = next.lastSequence;
+    state.nodes = next.nodes;
+    state.relations = next.relations;
+    state.feedback = next.feedback;
+    state.decisions = next.decisions;
+    state.events = next.events;
   }
 
   async function enqueue<T>(fn: () => Promise<T>): Promise<T> {
@@ -206,9 +139,9 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
   async function append(event: Omit<AionisEvent, "sequence">): Promise<AionisEvent> {
     return await enqueue(async () => {
       const fullEvent = { ...event, sequence: state.lastSequence + 1 } as AionisEvent;
-      applyEvent(cloneState(state), fullEvent);
+      applyAionisEvent(cloneReplayState(state), fullEvent);
       await appendFile(eventsPath, `${JSON.stringify(fullEvent)}\n`, "utf8");
-      applyEvent(state, fullEvent);
+      applyAionisEvent(state, fullEvent);
       await persistSnapshot();
       return fullEvent;
     });
@@ -285,10 +218,70 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
       };
     },
 
+    async compact() {
+      return await enqueue(async () => {
+        const beforeEvents = [...state.events];
+        const before = {
+          eventCount: beforeEvents.length,
+          lastSequence: state.lastSequence,
+          eventsSha256: checksumAionisEvents(beforeEvents),
+        };
+        if (beforeEvents.length === 0) {
+          return {
+            adapter: "file",
+            schemaVersion: CURRENT_SCHEMA_VERSION,
+            compacted: false,
+            before,
+            after: {
+              eventCount: 0,
+              lastSequence: 0,
+              checkpointEventId: null,
+            },
+          };
+        }
+
+        const checkpoint: AionisEvent = {
+          id: randomUUID(),
+          sequence: 1,
+          type: "substrate.checkpoint.created",
+          createdAt: isoNow(),
+          payload: {
+            schemaVersion: CURRENT_SCHEMA_VERSION,
+            coveredEventCount: beforeEvents.length,
+            coveredLastSequence: state.lastSequence,
+            coveredEventsSha256: before.eventsSha256,
+            state: {
+              nodes: Array.from(state.nodes.values()),
+              relations: Array.from(state.relations.values()),
+              feedback: Array.from(state.feedback.values()),
+              decisions: Array.from(state.decisions.values()),
+            },
+          },
+        };
+
+        const compactedState = emptyReplayState();
+        applyAionisEvent(compactedState, checkpoint);
+        await replaceEventLog([checkpoint]);
+        replaceState(compactedState);
+        await persistSnapshot();
+        return {
+          adapter: "file",
+          schemaVersion: CURRENT_SCHEMA_VERSION,
+          compacted: true,
+          before,
+          after: {
+            eventCount: state.events.length,
+            lastSequence: state.lastSequence,
+            checkpointEventId: checkpoint.id,
+          },
+        };
+      });
+    },
+
     async putNode(input: AionisMemoryNodeInput): Promise<AionisMemoryNode> {
       const ts = isoNow();
       const id = input.id ?? randomUUID();
-      const existing = state.nodes.get(key(input.scope, id));
+      const existing = state.nodes.get(eventKey(input.scope, id));
       const createdAt = existing?.createdAt ?? input.createdAt ?? ts;
       const updatedAt = input.updatedAt ?? ts;
       const node: AionisMemoryNode = {
@@ -328,11 +321,11 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
           memoryId: requireNonEmpty(input.memoryId, "memoryId"),
           lifecycle: input.lifecycle,
           authority: input.authority,
-          confidence: input.confidence,
+          confidence: input.confidence === undefined ? undefined : clampConfidence(input.confidence),
           reason: requireNonEmpty(input.reason, "reason"),
         },
       });
-      const node = state.nodes.get(key(input.scope, input.memoryId));
+      const node = state.nodes.get(eventKey(input.scope, input.memoryId));
       if (!node) throw new Error(`missing memory node after lifecycle transition: ${input.memoryId}`);
       return node;
     },
@@ -346,9 +339,9 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
         sourceId: requireNonEmpty(input.sourceId, "sourceId"),
         targetId: requireNonEmpty(input.targetId, "targetId"),
         confidence: clampConfidence(input.confidence ?? 0.7),
-          reasons: normalizeStrings(input.reasons),
-          metadata: input.metadata ?? {},
-          createdAt: input.createdAt ?? ts,
+        reasons: normalizeStrings(input.reasons),
+        metadata: input.metadata ?? {},
+        createdAt: input.createdAt ?? ts,
       };
       await append({
         id: randomUUID(),
@@ -438,7 +431,7 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
     },
 
     async getNode(scope: string, id: string): Promise<AionisMemoryNode | null> {
-      return state.nodes.get(key(scope, id)) ?? null;
+      return state.nodes.get(eventKey(scope, id)) ?? null;
     },
 
     async listNodes(scope: string): Promise<AionisMemoryNode[]> {

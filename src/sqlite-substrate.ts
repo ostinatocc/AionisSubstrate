@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { applyAionisEvent, checksumAionisEvents, emptyReplayState } from "./event-log.ts";
 import { AIONIS_SUBSTRATE_SCHEMA_VERSION as CURRENT_SCHEMA_VERSION } from "./types.ts";
 import type {
   AionisAdmissionAction,
@@ -76,6 +77,14 @@ type SqliteDecisionRow = {
 
 type SqliteMetadataRow = {
   value: string;
+};
+
+type SqliteEventRow = {
+  sequence: number;
+  id: string;
+  type: AionisEvent["type"];
+  created_at: string;
+  payload_json: string;
 };
 
 function requireNonEmpty(value: string, label: string): string {
@@ -166,6 +175,16 @@ function rowToDecision(row: SqliteDecisionRow): AionisDecisionTrace {
     decisions: parseJsonArray(row.decisions_json) as AionisAdmissionDecision[],
     createdAt: row.created_at,
   };
+}
+
+function rowToEvent(row: SqliteEventRow): AionisEvent {
+  return {
+    id: row.id,
+    sequence: row.sequence,
+    type: row.type,
+    createdAt: row.created_at,
+    payload: JSON.parse(row.payload_json),
+  } as AionisEvent;
 }
 
 function relationBlocksDirectUse(kind: string): boolean {
@@ -384,6 +403,46 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
     return { id, sequence, type, createdAt, payload } as AionisEvent;
   }
 
+  function listEventsSync(): AionisEvent[] {
+    return (db.prepare(`
+      SELECT sequence, id, type, created_at, payload_json
+      FROM substrate_events
+      ORDER BY sequence ASC
+    `).all() as SqliteEventRow[]).map(rowToEvent);
+  }
+
+  function listAllNodesSync(): AionisMemoryNode[] {
+    return (db.prepare(`
+      SELECT *
+      FROM memory_nodes
+      ORDER BY scope ASC, id ASC
+    `).all() as SqliteMemoryNodeRow[]).map(rowToNode);
+  }
+
+  function listAllRelationsSync(): AionisRelation[] {
+    return (db.prepare(`
+      SELECT *
+      FROM memory_relations
+      ORDER BY scope ASC, id ASC
+    `).all() as SqliteRelationRow[]).map(rowToRelation);
+  }
+
+  function listAllFeedbackSync(): AionisFeedback[] {
+    return (db.prepare(`
+      SELECT *
+      FROM memory_feedback
+      ORDER BY scope ASC, id ASC
+    `).all() as SqliteFeedbackRow[]).map(rowToFeedback);
+  }
+
+  function listAllDecisionsSync(): AionisDecisionTrace[] {
+    return (db.prepare(`
+      SELECT *
+      FROM decision_traces
+      ORDER BY scope ASC, id ASC
+    `).all() as SqliteDecisionRow[]).map(rowToDecision);
+  }
+
   function getNodeSync(scope: string, id: string): AionisMemoryNode | null {
     const row = db.prepare("SELECT * FROM memory_nodes WHERE scope = ? AND id = ?").get(scope, id) as SqliteMemoryNodeRow | undefined;
     return row ? rowToNode(row) : null;
@@ -498,6 +557,75 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
           eventCount,
         };
       });
+    },
+
+    async compact() {
+      return await enqueue(() => transaction(() => {
+        const beforeEvents = listEventsSync();
+        const before = {
+          eventCount: beforeEvents.length,
+          lastSequence: Number((db.prepare("SELECT coalesce(max(sequence), 0) AS sequence FROM substrate_events").get() as { sequence: number }).sequence),
+          eventsSha256: checksumAionisEvents(beforeEvents),
+        };
+        if (beforeEvents.length === 0) {
+          return {
+            adapter: "sqlite",
+            schemaVersion: CURRENT_SCHEMA_VERSION,
+            compacted: false,
+            before,
+            after: {
+              eventCount: 0,
+              lastSequence: 0,
+              checkpointEventId: null,
+            },
+          };
+        }
+
+        const checkpoint: AionisEvent = {
+          id: randomUUID(),
+          sequence: 1,
+          type: "substrate.checkpoint.created",
+          createdAt: isoNow(),
+          payload: {
+            schemaVersion: CURRENT_SCHEMA_VERSION,
+            coveredEventCount: beforeEvents.length,
+            coveredLastSequence: before.lastSequence,
+            coveredEventsSha256: before.eventsSha256,
+            state: {
+              nodes: listAllNodesSync(),
+              relations: listAllRelationsSync(),
+              feedback: listAllFeedbackSync(),
+              decisions: listAllDecisionsSync(),
+            },
+          },
+        };
+        applyAionisEvent(emptyReplayState(), checkpoint);
+
+        db.exec(`
+          DELETE FROM substrate_events;
+          DELETE FROM sqlite_sequence WHERE name = 'substrate_events';
+        `);
+        db.prepare(`
+          INSERT INTO substrate_events (sequence, id, type, created_at, payload_json)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(checkpoint.sequence, checkpoint.id, checkpoint.type, checkpoint.createdAt, stringify(checkpoint.payload));
+        writeMetadataValue(db, "last_compacted_at", checkpoint.createdAt);
+        writeMetadataValue(db, "last_compacted_event_count", String(before.eventCount));
+        writeMetadataValue(db, "last_compacted_last_sequence", String(before.lastSequence));
+        writeMetadataValue(db, "last_compacted_events_sha256", before.eventsSha256);
+
+        return {
+          adapter: "sqlite",
+          schemaVersion: CURRENT_SCHEMA_VERSION,
+          compacted: true,
+          before,
+          after: {
+            eventCount: 1,
+            lastSequence: 1,
+            checkpointEventId: checkpoint.id,
+          },
+        };
+      }));
     },
 
     async putNode(input: AionisMemoryNodeInput): Promise<AionisMemoryNode> {
@@ -675,22 +803,7 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
     },
 
     async listEvents(): Promise<AionisEvent[]> {
-      return await enqueue(() => {
-        const rows = db.prepare("SELECT sequence, id, type, created_at, payload_json FROM substrate_events ORDER BY sequence ASC").all() as Array<{
-          sequence: number;
-          id: string;
-          type: AionisEvent["type"];
-          created_at: string;
-          payload_json: string;
-        }>;
-        return rows.map((row) => ({
-          id: row.id,
-          sequence: row.sequence,
-          type: row.type,
-          createdAt: row.created_at,
-          payload: JSON.parse(row.payload_json),
-        } as AionisEvent));
-      });
+      return await enqueue(() => listEventsSync());
     },
 
     async close(): Promise<void> {

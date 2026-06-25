@@ -18,8 +18,11 @@ Every durable mutation must be recorded as an event:
 - `memory.relation.upsert`
 - `memory.feedback.recorded`
 - `memory.decision.recorded`
+- `substrate.checkpoint.created`
 
 Adapters may maintain read-model tables or snapshots, but those read models are derived from evidence events.
+
+`substrate.checkpoint.created` is allowed only for physical log compaction. It must carry the current read model plus checksum metadata for the events it covers.
 
 ### 2. Validate Before Persisting Invalid Events
 
@@ -63,7 +66,19 @@ A relation in `repo-a` must not affect admission in `repo-b`, even if memory ids
 
 Forgetting is a lifecycle transition, not deletion.
 
-Adapters may support physical compaction later, but the current contract keeps memory evidence visible through lifecycle and relation state.
+Physical compaction must not be used as forgetting. Memory evidence remains visible through lifecycle and relation state after a checkpoint.
+
+### 5.1 Checkpoint Compaction
+
+If an adapter implements `compact()`, it must:
+
+- validate the checkpoint before replacing the event log;
+- include covered event count, covered last sequence, and covered event checksum;
+- preserve the current nodes, relations, feedback, and decision traces;
+- keep `compileContext` buckets unchanged after reopen;
+- continue future writes with contiguous event sequences after the checkpoint.
+
+The file adapter rewrites `events.jsonl` atomically. The SQLite adapter replaces `substrate_events` in a transaction and resets the event sequence table.
 
 ### 6. Context Compilation Parity
 
@@ -113,6 +128,7 @@ The test suite currently checks:
 - store schema version is reported by both adapters;
 - SQLite schema metadata is persisted and future unsupported schemas are rejected;
 - event-log backups verify checksums and restore to file and SQLite stores;
+- checkpoint compaction preserves governed state and restarts future event sequences after the checkpoint;
 - Runtime snapshot import opens source SQLite read-only.
 
 ## Non-Goals

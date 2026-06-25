@@ -21,8 +21,11 @@ Every durable mutation is recorded as an append-only event:
 - `memory.relation.upsert`
 - `memory.feedback.recorded`
 - `memory.decision.recorded`
+- `substrate.checkpoint.created`
 
 The event log is the evidence trail. Read models may be rebuilt from it or maintained alongside it, but they are not the authority boundary.
+
+`substrate.checkpoint.created` is a physical compaction event. It contains a checksum-covered snapshot of the current substrate state plus metadata about the covered event history. It does not suppress, archive, delete, or promote memory by itself.
 
 ### Store Schema Version
 
@@ -46,6 +49,22 @@ Backups export the append-only event log plus schema metadata and a SHA-256 chec
 Restore must verify the backup before writing a target store. Restored stores preserve original event ids and sequence numbers, then rebuild derived read models.
 
 Payload files referenced by `payloadRef` are not embedded in the Substrate backup. They remain external artifacts and need their own retention policy.
+
+### Checkpoint Compaction
+
+Adapters may compact a long event log into a `substrate.checkpoint.created` event.
+
+The checkpoint must preserve:
+
+- covered event count;
+- covered last sequence;
+- SHA-256 checksum of the covered event list;
+- current memory nodes;
+- current relations;
+- current feedback records;
+- current decision traces.
+
+After compaction, the physical log sequence restarts at the checkpoint event. Future writes continue after that checkpoint. This is a storage-maintenance boundary only; it must not change admission buckets or lifecycle state.
 
 ### Memory Node
 
@@ -136,6 +155,7 @@ Every adapter must satisfy the same observable contract:
 4. Compile the same admission buckets from the same node/relation state.
 5. Record decision traces as events.
 6. Reopen cleanly and recover the same read model.
+7. If compaction is supported, compact only through a validated checkpoint event.
 
 Current adapters:
 

@@ -658,6 +658,7 @@ function eventScope(event: AionisEvent): string | null {
 
 function eventCountsForScope(events: AionisEvent[], scope: string): Record<AionisEvent["type"], number> {
   const counts: Record<AionisEvent["type"], number> = {
+    "substrate.checkpoint.created": 0,
     "memory.node.upsert": 0,
     "memory.lifecycle.transition": 0,
     "memory.relation.upsert": 0,

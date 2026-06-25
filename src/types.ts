@@ -157,7 +157,29 @@ export type AionisCompiledContext = {
   decision_trace: AionisDecisionTrace;
 };
 
+export type AionisCheckpointState = {
+  nodes: AionisMemoryNode[];
+  relations: AionisRelation[];
+  feedback: AionisFeedback[];
+  decisions: AionisDecisionTrace[];
+};
+
+export type AionisSubstrateCheckpoint = {
+  schemaVersion: number;
+  coveredEventCount: number;
+  coveredLastSequence: number;
+  coveredEventsSha256: string;
+  state: AionisCheckpointState;
+};
+
 export type AionisEvent =
+  | {
+      id: string;
+      sequence: number;
+      type: "substrate.checkpoint.created";
+      createdAt: string;
+      payload: AionisSubstrateCheckpoint;
+    }
   | {
       id: string;
       sequence: number;
@@ -218,8 +240,25 @@ export type AionisSubstrateStoreInfo = {
   eventCount: number;
 };
 
+export type AionisCompactionReport = {
+  adapter: AionisSubstrateAdapterKind;
+  schemaVersion: number;
+  compacted: boolean;
+  before: {
+    eventCount: number;
+    lastSequence: number;
+    eventsSha256: string;
+  };
+  after: {
+    eventCount: number;
+    lastSequence: number;
+    checkpointEventId: string | null;
+  };
+};
+
 export type AionisSubstrate = {
   getStoreInfo(): Promise<AionisSubstrateStoreInfo>;
+  compact(): Promise<AionisCompactionReport>;
   putNode(input: AionisMemoryNodeInput): Promise<AionisMemoryNode>;
   transitionLifecycle(input: {
     scope: string;

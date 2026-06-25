@@ -17,6 +17,8 @@ The backup object contains:
 
 The checksum covers the event list. If an event payload is changed after export, verification fails and restore is rejected.
 
+A compacted store may export a `substrate.checkpoint.created` event instead of the original full event history. The checkpoint includes covered event count, covered last sequence, and the SHA-256 checksum of the covered event list.
+
 ## Export
 
 ```ts
@@ -61,6 +63,8 @@ Verification checks:
 - relation / feedback / lifecycle references;
 - event count and last sequence headers;
 - SHA-256 checksum.
+
+For checkpoint events, verification also replays the checkpoint payload and checks relation / feedback references inside the checkpoint state.
 
 ## Restore to File Store
 

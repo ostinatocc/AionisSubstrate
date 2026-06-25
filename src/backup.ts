@@ -1,7 +1,11 @@
-import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import {
+  checksumAionisEvents,
+  replayAionisEvents,
+  snapshotFromReplayState,
+} from "./event-log.ts";
 import { openSqliteAionisSubstrate } from "./sqlite-substrate.ts";
 import {
   AIONIS_SUBSTRATE_SCHEMA_VERSION,
@@ -47,135 +51,6 @@ export type RestoreAionisSubstrateBackupOptions = {
   overwrite?: boolean;
 };
 
-type ReplayState = {
-  lastSequence: number;
-  nodes: Map<string, AionisMemoryNode>;
-  relations: Map<string, AionisRelation>;
-  feedback: Map<string, AionisFeedback>;
-  decisions: Map<string, AionisDecisionTrace>;
-  events: AionisEvent[];
-};
-
-function key(scope: string, id: string): string {
-  return `${scope}\u0000${id}`;
-}
-
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, item]) => item !== undefined)
-    .sort(([a], [b]) => a.localeCompare(b));
-  return `{${entries.map(([name, item]) => `${JSON.stringify(name)}:${stableStringify(item)}`).join(",")}}`;
-}
-
-function checksumEvents(events: AionisEvent[]): string {
-  return createHash("sha256").update(stableStringify(events)).digest("hex");
-}
-
-function emptyState(): ReplayState {
-  return {
-    lastSequence: 0,
-    nodes: new Map(),
-    relations: new Map(),
-    feedback: new Map(),
-    decisions: new Map(),
-    events: [],
-  };
-}
-
-function requireString(value: unknown, label: string): string {
-  if (typeof value !== "string" || value.trim() === "") throw new Error(`${label} is required`);
-  return value;
-}
-
-function requireNumber(value: unknown, label: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${label} must be finite`);
-  return value;
-}
-
-function validateEventShape(event: AionisEvent): void {
-  requireString(event.id, "event.id");
-  requireNumber(event.sequence, "event.sequence");
-  if (!Number.isInteger(event.sequence) || event.sequence < 1) throw new Error(`invalid event sequence: ${event.sequence}`);
-  requireString(event.createdAt, "event.createdAt");
-  requireString(event.type, "event.type");
-  if (!event.payload || typeof event.payload !== "object") throw new Error(`event payload is required for sequence ${event.sequence}`);
-}
-
-function applyEvent(state: ReplayState, event: AionisEvent): void {
-  validateEventShape(event);
-  const expectedSequence = state.lastSequence + 1;
-  if (event.sequence !== expectedSequence) {
-    throw new Error(`event sequence gap at ${event.sequence}; expected ${expectedSequence}`);
-  }
-
-  if (state.events.some((item) => item.id === event.id)) {
-    throw new Error(`duplicate event id: ${event.id}`);
-  }
-
-  if (event.type === "memory.node.upsert") {
-    const node = event.payload;
-    state.nodes.set(key(node.scope, node.id), node);
-  } else if (event.type === "memory.lifecycle.transition") {
-    const nodeKey = key(event.payload.scope, event.payload.memoryId);
-    const current = state.nodes.get(nodeKey);
-    if (!current) throw new Error(`cannot transition missing memory node: ${event.payload.memoryId}`);
-    state.nodes.set(nodeKey, {
-      ...current,
-      lifecycle: event.payload.lifecycle,
-      authority: event.payload.authority ?? current.authority,
-      confidence: event.payload.confidence ?? current.confidence,
-      updatedAt: event.createdAt,
-      metadata: {
-        ...(current.metadata ?? {}),
-        last_lifecycle_transition_reason: event.payload.reason,
-      },
-    });
-  } else if (event.type === "memory.relation.upsert") {
-    const relation = event.payload;
-    if (!state.nodes.has(key(relation.scope, relation.sourceId))) {
-      throw new Error(`cannot relate missing source memory node: ${relation.sourceId}`);
-    }
-    if (!state.nodes.has(key(relation.scope, relation.targetId))) {
-      throw new Error(`cannot relate missing target memory node: ${relation.targetId}`);
-    }
-    state.relations.set(key(relation.scope, relation.id), relation);
-  } else if (event.type === "memory.feedback.recorded") {
-    const feedback = event.payload;
-    if (!state.nodes.has(key(feedback.scope, feedback.memoryId))) {
-      throw new Error(`cannot record feedback for missing memory node: ${feedback.memoryId}`);
-    }
-    state.feedback.set(key(feedback.scope, feedback.id), feedback);
-  } else if (event.type === "memory.decision.recorded") {
-    const decision = event.payload;
-    state.decisions.set(key(decision.scope, decision.id), decision);
-  } else {
-    throw new Error(`unsupported event type: ${(event as { type?: string }).type}`);
-  }
-
-  state.lastSequence = event.sequence;
-  state.events.push(event);
-}
-
-function replayEvents(events: AionisEvent[]): ReplayState {
-  const state = emptyState();
-  for (const event of events) applyEvent(state, event);
-  return state;
-}
-
-function snapshotFromReplay(state: ReplayState): AionisSubstrateSnapshot {
-  return {
-    version: 1,
-    schemaVersion: AIONIS_SUBSTRATE_SCHEMA_VERSION,
-    lastSequence: state.lastSequence,
-    nodes: Array.from(state.nodes.values()),
-    relations: Array.from(state.relations.values()),
-    feedback: Array.from(state.feedback.values()),
-    decisions: Array.from(state.decisions.values()),
-  };
-}
-
 function assertValidBackup(backup: AionisSubstrateBackup): AionisSubstrateSnapshot {
   const report = verifyAionisSubstrateBackup(backup);
   if (!report.ok) throw new Error(`invalid Aionis Substrate backup: ${report.errors.join("; ")}`);
@@ -187,8 +62,8 @@ export async function exportAionisSubstrateBackup(
   options: { createdAt?: string } = {},
 ): Promise<AionisSubstrateBackup> {
   const [source, events] = await Promise.all([store.getStoreInfo(), store.listEvents()]);
-  const state = replayEvents(events);
-  const eventsSha256 = checksumEvents(events);
+  const state = replayAionisEvents(events);
+  const eventsSha256 = checksumAionisEvents(events);
   return {
     format: AIONIS_SUBSTRATE_BACKUP_FORMAT,
     backupVersion: AIONIS_SUBSTRATE_BACKUP_VERSION,
@@ -220,10 +95,10 @@ export function verifyAionisSubstrateBackup(backup: AionisSubstrateBackup): Aion
 
   if (Array.isArray(backup.events)) {
     try {
-      const state = replayEvents(backup.events);
-      snapshot = snapshotFromReplay(state);
+      const state = replayAionisEvents(backup.events);
+      snapshot = snapshotFromReplayState(state);
       lastSequence = state.lastSequence;
-      eventsSha256 = checksumEvents(backup.events);
+      eventsSha256 = checksumAionisEvents(backup.events);
       if (backup.eventCount !== backup.events.length) {
         errors.push(`eventCount mismatch: header=${backup.eventCount}, actual=${backup.events.length}`);
       }
@@ -307,6 +182,7 @@ export async function restoreAionisSubstrateBackupToSqlite(
       DELETE FROM memory_relations;
       DELETE FROM memory_nodes;
       DELETE FROM substrate_events;
+      DELETE FROM sqlite_sequence WHERE name = 'substrate_events';
     `);
 
     for (const event of backup.events) {

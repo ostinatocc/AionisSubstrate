@@ -49,6 +49,7 @@ This first version ships two embedded adapters:
 - every store reports its substrate schema version through `getStoreInfo`.
 - the SQLite adapter persists schema metadata and rejects stores created by a newer unsupported schema.
 - event-log backups can be exported, checksum-verified, and restored to either file or SQLite stores.
+- checkpoint compaction can rewrite a store event log to one checksum-covered checkpoint event without changing governed state.
 - `importRuntimeLiteSnapshot` can import an existing Runtime Lite SQLite database into an isolated Substrate store through a read-only source connection.
 
 This is intentionally small. It proves the substrate contract without changing the existing Aionis Runtime.
@@ -62,6 +63,8 @@ API usage is documented in [docs/API_USAGE.md](docs/API_USAGE.md).
 Adapter consistency requirements are documented in [docs/ADAPTER_CONTRACT.md](docs/ADAPTER_CONTRACT.md).
 
 Backup and restore are documented in [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md).
+
+Checkpoint compaction is documented in [docs/CHECKPOINT_COMPACTION.md](docs/CHECKPOINT_COMPACTION.md).
 
 Runtime snapshot import is documented in [docs/RUNTIME_SNAPSHOT_IMPORT.md](docs/RUNTIME_SNAPSHOT_IMPORT.md).
 

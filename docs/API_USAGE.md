@@ -135,6 +135,20 @@ The compiled context has four surfaces:
 
 `compileContext` records a `memory.decision.recorded` event. It is intentionally auditable, not a pure read.
 
+## Compact the Event Log
+
+```ts
+const report = await store.compact();
+
+console.log(report.compacted);
+console.log(report.before.eventCount);
+console.log(report.after.eventCount);
+```
+
+Compaction is physical log maintenance. It writes a `substrate.checkpoint.created` event that preserves the current nodes, relations, feedback, decision traces, and checksum metadata for the covered history.
+
+It does not change lifecycle state, admission buckets, or Runtime policy.
+
 ## Export, Verify, and Restore
 
 ```ts
