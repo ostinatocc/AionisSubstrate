@@ -1,0 +1,30 @@
+{
+  "name": "@aionis/substrate",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Aionis-native memory and execution-state substrate experiment.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "bench:contract": "node scripts/substrate-contract-benchmark.ts",
+    "check:runtime-snapshot": "node scripts/runtime-snapshot-parity.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "keywords": [
+    "aionis",
+    "memory",
+    "execution-state",
+    "substrate"
+  ],
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "typescript": "^6.0.3"
+  }
+}
