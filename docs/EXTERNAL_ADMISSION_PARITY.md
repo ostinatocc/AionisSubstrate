@@ -32,6 +32,9 @@ The runner covers:
 - unverified candidate memory routed to `inspect_before_use`;
 - failed, stale, suppressed, or blocked memory kept out of direct use;
 - raw trace or payload-only memory routed to `rehydrate`.
+- trusted ordinary preference/fact memory outside code execution traces;
+- known-source memory that remains inspect-only under focused Runtime firewall behavior;
+- explicit authority requirements that override otherwise current lifecycle hints.
 
 The focused Runtime route may apply stricter product firewall behavior before bucket emission. For example, an inspect-like external candidate outside the active target cluster can be blocked as `do_not_use`. This runner intentionally keeps fixtures inside the shared external admission contract so the comparison validates Substrate bucket expressiveness instead of forcing full Runtime product policy into the substrate layer.
 
@@ -45,18 +48,18 @@ It also does not mutate Runtime source code or Runtime product databases. The fo
 
 ## Current Focused Runtime Check
 
-The first real focused Runtime parity run after adding this runner produced:
+The expanded focused Runtime parity run currently produces:
 
 ```text
-scenario_count: 2
-exact_scenario_count: 2
+scenario_count: 6
+exact_scenario_count: 6
 failed_scenario_count: 0
 ```
 
 Report:
 
 ```text
-reports/external-admission-parity-2026-06-25T13-47-52-187Z/summary.json
+reports/external-admission-parity-2026-06-25T13-55-46-261Z/summary.json
 ```
 
 Reports are generated artifacts and are not committed by default.
