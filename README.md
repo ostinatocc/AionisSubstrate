@@ -1,8 +1,20 @@
 # Aionis Substrate
 
-Aionis Substrate is an independent experiment for an Aionis-native memory and execution-state store.
+Aionis Substrate is an independent storage-contract project for Aionis memory and execution state.
 
-It is not Aionis Runtime core, not a vector database replacement, and not connected to `AionisRuntime-focused` yet.
+It defines the durable substrate Aionis needs for governed working memory: append-only evidence, lifecycle state, relations, feedback, decision receipts, and context admission buckets.
+
+It is not Aionis Runtime core, not an Agent framework, and not a vector database replacement.
+
+## Status
+
+- Package: `@aionis/substrate`
+- Version: `0.0.1`
+- Runtime: Node 24+
+- Current adapters: file store and SQLite
+- Runtime integration status: read-only snapshot import and corpus validation only
+
+The project is intentionally independent from `AionisRuntime-focused`. It can import real Runtime Lite SQLite snapshots for validation, but it does not mutate Runtime databases or replace Runtime storage.
 
 ## Goal
 
@@ -14,6 +26,16 @@ Define the storage semantics Aionis needs before choosing or building a storage 
 - admission buckets: `use_now`, `inspect_before_use`, `do_not_use`, `rehydrate`
 - decision traces that explain why memory was admitted, downgraded, blocked, or deferred
 - controlled forgetting as state transitions, not silent deletion
+
+## What It Is Not
+
+- not a RAG library;
+- not a vector index;
+- not a chat memory store;
+- not a benchmark harness;
+- not the full Aionis Runtime policy engine.
+
+The admission logic here is a substrate-level minimum contract. Full Aionis Runtime policy remains above this layer.
 
 ## Current Scope
 
@@ -31,6 +53,10 @@ This is intentionally small. It proves the substrate contract without changing t
 ## Contract
 
 See [docs/STORE_CONTRACT.md](docs/STORE_CONTRACT.md).
+
+API usage is documented in [docs/API_USAGE.md](docs/API_USAGE.md).
+
+Adapter consistency requirements are documented in [docs/ADAPTER_CONTRACT.md](docs/ADAPTER_CONTRACT.md).
 
 Runtime snapshot import is documented in [docs/RUNTIME_SNAPSHOT_IMPORT.md](docs/RUNTIME_SNAPSHOT_IMPORT.md).
 
@@ -87,3 +113,13 @@ npm run check:runtime-corpus -- \
 ```
 
 This scans Runtime Lite SQLite files read-only, imports selected scopes into temporary Substrate stores, and writes an aggregate report under `reports/runtime-snapshot-corpus-*`.
+
+## Development Checks
+
+```bash
+npm run typecheck
+npm test
+npm run bench:contract
+```
+
+The CI workflow runs the same checks on every push and pull request.
