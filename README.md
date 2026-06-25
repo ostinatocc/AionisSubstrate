@@ -12,9 +12,9 @@ It is not Aionis Runtime core, not an Agent framework, and not a vector database
 - Version: `0.0.1`
 - Runtime: Node 24+
 - Current adapters: file store and SQLite
-- Runtime integration status: read-only snapshot import and corpus validation only
+- Runtime integration status: read-only snapshot import, reference-corpus parity, external admission parity, and isolated dual-write sidecar experiments
 
-The project is intentionally independent from `AionisRuntime-focused`. It can import real Runtime Lite SQLite snapshots for validation, but it does not mutate Runtime databases or replace Runtime storage.
+The project is intentionally independent from `AionisRuntime-focused`. It can import real Runtime Lite SQLite snapshots for validation and run isolated sidecar dual-write experiments, but it does not mutate Runtime source code or replace Runtime storage.
 
 ## Goal
 
@@ -46,6 +46,8 @@ This first version ships two embedded adapters:
 - `openSqliteAionisSubstrate` stores the same event log and read model in SQLite tables.
 - every write is serialized and persisted.
 - reopening the store rebuilds the same state from disk.
+- every store reports its substrate schema version through `getStoreInfo`.
+- the SQLite adapter persists schema metadata and rejects stores created by a newer unsupported schema.
 - `importRuntimeLiteSnapshot` can import an existing Runtime Lite SQLite database into an isolated Substrate store through a read-only source connection.
 
 This is intentionally small. It proves the substrate contract without changing the existing Aionis Runtime.

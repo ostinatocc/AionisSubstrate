@@ -1,3 +1,5 @@
+export const AIONIS_SUBSTRATE_SCHEMA_VERSION = 1;
+
 export type AionisMemoryKind =
   | "execution"
   | "procedure"
@@ -37,6 +39,8 @@ export type AionisAdmissionAction =
   | "inspect_before_use"
   | "do_not_use"
   | "rehydrate";
+
+export type AionisSubstrateAdapterKind = "file" | "sqlite";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -199,6 +203,7 @@ export type AionisEvent =
 
 export type AionisSubstrateSnapshot = {
   version: 1;
+  schemaVersion: number;
   lastSequence: number;
   nodes: AionisMemoryNode[];
   relations: AionisRelation[];
@@ -206,7 +211,15 @@ export type AionisSubstrateSnapshot = {
   decisions: AionisDecisionTrace[];
 };
 
+export type AionisSubstrateStoreInfo = {
+  adapter: AionisSubstrateAdapterKind;
+  schemaVersion: number;
+  lastSequence: number;
+  eventCount: number;
+};
+
 export type AionisSubstrate = {
+  getStoreInfo(): Promise<AionisSubstrateStoreInfo>;
   putNode(input: AionisMemoryNodeInput): Promise<AionisMemoryNode>;
   transitionLifecycle(input: {
     scope: string;

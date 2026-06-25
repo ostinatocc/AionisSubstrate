@@ -24,6 +24,21 @@ Every durable mutation is recorded as an append-only event:
 
 The event log is the evidence trail. Read models may be rebuilt from it or maintained alongside it, but they are not the authority boundary.
 
+### Store Schema Version
+
+Every store has a substrate schema version. The current schema version is `1`.
+
+Adapters must expose schema metadata through `getStoreInfo`:
+
+- adapter kind
+- schema version
+- last event sequence
+- event count
+
+The SQLite adapter persists schema metadata in `substrate_metadata` and mirrors the same version into SQLite `user_version`. Opening a store with a newer unsupported schema must fail before any mutation occurs.
+
+The file adapter writes the same schema version into `snapshot.json`. The append-only event log remains the durable evidence source; the snapshot schema is the derived read-model format.
+
 ### Memory Node
 
 A memory node is a governed memory object:

@@ -76,7 +76,41 @@ test("sqlite substrate persists event log and structured read model across reope
     assert.equal(events.length, 5);
     assert.deepEqual(events.map((event) => event.sequence), [1, 2, 3, 4, 5]);
     assert.equal(events.at(-1)?.type, "memory.decision.recorded");
+    assert.deepEqual(await store.getStoreInfo(), {
+      adapter: "sqlite",
+      schemaVersion: 1,
+      lastSequence: 5,
+      eventCount: 5,
+    });
     await store.close();
+
+    const db = new DatabaseSync(path, { readOnly: true });
+    const schemaVersion = db.prepare("SELECT value FROM substrate_metadata WHERE key = 'schema_version'").get() as { value: string };
+    const userVersion = db.prepare("PRAGMA user_version").get() as { user_version: number };
+    db.close();
+    assert.equal(schemaVersion.value, "1");
+    assert.equal(userVersion.user_version, 1);
+  });
+});
+
+test("sqlite adapter rejects a store created by a newer schema", async () => {
+  await withSqlite(async (path) => {
+    let store = await openSqliteAionisSubstrate({ path });
+    await store.close();
+
+    const db = new DatabaseSync(path);
+    db.prepare(`
+      INSERT INTO substrate_metadata (key, value)
+      VALUES ('schema_version', '999')
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run();
+    db.exec("PRAGMA user_version = 999");
+    db.close();
+
+    await assert.rejects(
+      openSqliteAionisSubstrate({ path }),
+      /unsupported Aionis Substrate schema version 999|unsupported SQLite user_version 999/,
+    );
   });
 });
 

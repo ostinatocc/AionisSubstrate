@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { AIONIS_SUBSTRATE_SCHEMA_VERSION as CURRENT_SCHEMA_VERSION } from "./types.ts";
 import type {
   AionisAdmissionAction,
   AionisAdmissionDecision,
@@ -71,6 +72,10 @@ type SqliteDecisionRow = {
   query: string | null;
   decisions_json: string;
   created_at: string;
+};
+
+type SqliteMetadataRow = {
+  value: string;
 };
 
 function requireNonEmpty(value: string, label: string): string {
@@ -227,10 +232,44 @@ function reasonsFor(node: AionisMemoryNode, relations: AionisRelation[]): { acti
   };
 }
 
-function createSchema(db: DatabaseSync): void {
+function readMetadataValue(db: DatabaseSync, key: string): string | null {
+  const row = db.prepare("SELECT value FROM substrate_metadata WHERE key = ?").get(key) as SqliteMetadataRow | undefined;
+  return row?.value ?? null;
+}
+
+function writeMetadataValue(db: DatabaseSync, key: string, value: string): void {
+  db.prepare(`
+    INSERT INTO substrate_metadata (key, value)
+    VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(key, value);
+}
+
+function migrateSchema(db: DatabaseSync, migratedAt: string): void {
   db.exec(`
     PRAGMA journal_mode = WAL;
 
+    CREATE TABLE IF NOT EXISTS substrate_metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `);
+
+  const existingVersionRaw = readMetadataValue(db, "schema_version");
+  const existingVersion = existingVersionRaw === null ? null : Number(existingVersionRaw);
+  if (existingVersion !== null && (!Number.isInteger(existingVersion) || existingVersion < 1)) {
+    throw new Error(`invalid Aionis Substrate schema version: ${existingVersionRaw}`);
+  }
+  if (existingVersion !== null && existingVersion > CURRENT_SCHEMA_VERSION) {
+    throw new Error(`unsupported Aionis Substrate schema version ${existingVersion}; current runtime supports ${CURRENT_SCHEMA_VERSION}`);
+  }
+
+  const userVersion = Number((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
+  if (userVersion > CURRENT_SCHEMA_VERSION) {
+    throw new Error(`unsupported SQLite user_version ${userVersion}; current runtime supports ${CURRENT_SCHEMA_VERSION}`);
+  }
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS substrate_events (
       sequence INTEGER PRIMARY KEY AUTOINCREMENT,
       id TEXT NOT NULL UNIQUE,
@@ -298,6 +337,14 @@ function createSchema(db: DatabaseSync): void {
     );
     CREATE INDEX IF NOT EXISTS idx_decision_traces_scope_created ON decision_traces(scope, created_at DESC, id);
   `);
+
+  if (existingVersion === null) {
+    writeMetadataValue(db, "created_at", migratedAt);
+  }
+  writeMetadataValue(db, "adapter", "sqlite");
+  writeMetadataValue(db, "schema_version", String(CURRENT_SCHEMA_VERSION));
+  writeMetadataValue(db, "last_migrated_at", migratedAt);
+  db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
 }
 
 export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOptions): Promise<AionisSubstrate> {
@@ -305,7 +352,7 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
   const db = new DatabaseSync(options.path);
   const now = options.now ?? (() => new Date());
   let tail: Promise<unknown> = Promise.resolve();
-  createSchema(db);
+  migrateSchema(db, now().toISOString());
 
   function isoNow(): string {
     return now().toISOString();
@@ -439,6 +486,20 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
   }
 
   return {
+    async getStoreInfo() {
+      return await enqueue(() => {
+        const eventCount = Number((db.prepare("SELECT count(*) AS count FROM substrate_events").get() as { count: number }).count);
+        const lastSequence = Number((db.prepare("SELECT coalesce(max(sequence), 0) AS sequence FROM substrate_events").get() as { sequence: number }).sequence);
+        const schemaVersion = Number(readMetadataValue(db, "schema_version") ?? CURRENT_SCHEMA_VERSION);
+        return {
+          adapter: "sqlite",
+          schemaVersion,
+          lastSequence,
+          eventCount,
+        };
+      });
+    },
+
     async putNode(input: AionisMemoryNodeInput): Promise<AionisMemoryNode> {
       return await enqueue(() => transaction(() => {
         const ts = isoNow();

@@ -18,6 +18,7 @@ import type {
   AionisSubstrate,
   AionisSubstrateSnapshot,
 } from "./types.ts";
+import { AIONIS_SUBSTRATE_SCHEMA_VERSION as CURRENT_SCHEMA_VERSION } from "./types.ts";
 
 type FileSubstrateState = {
   lastSequence: number;
@@ -79,6 +80,7 @@ function cloneState(state: FileSubstrateState): FileSubstrateState {
 function snapshotFromState(state: FileSubstrateState): AionisSubstrateSnapshot {
   return {
     version: 1,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     lastSequence: state.lastSequence,
     nodes: Array.from(state.nodes.values()),
     relations: Array.from(state.relations.values()),
@@ -274,6 +276,15 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
   }
 
   return {
+    async getStoreInfo() {
+      return {
+        adapter: "file",
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        lastSequence: state.lastSequence,
+        eventCount: state.events.length,
+      };
+    },
+
     async putNode(input: AionisMemoryNodeInput): Promise<AionisMemoryNode> {
       const ts = isoNow();
       const id = input.id ?? randomUUID();

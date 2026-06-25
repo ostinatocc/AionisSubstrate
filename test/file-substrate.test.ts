@@ -45,10 +45,18 @@ test("embedded substrate persists append-only evidence and rebuilds the read mod
     const events = await reopened.listEvents();
     assert.equal(events.length, 2);
     assert.deepEqual(events.map((event) => event.sequence), [1, 2]);
+    assert.deepEqual(await reopened.getStoreInfo(), {
+      adapter: "file",
+      schemaVersion: 1,
+      lastSequence: 2,
+      eventCount: 2,
+    });
 
     const eventLog = await readFile(join(dir, "events.jsonl"), "utf8");
     assert.match(eventLog, /memory\.node\.upsert/);
     assert.match(eventLog, /memory\.feedback\.recorded/);
+    const snapshot = JSON.parse(await readFile(join(dir, "snapshot.json"), "utf8")) as { schemaVersion?: number };
+    assert.equal(snapshot.schemaVersion, 1);
   });
 });
 

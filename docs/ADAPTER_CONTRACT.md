@@ -43,6 +43,16 @@ For the file adapter, `snapshot.json` is an optimization. If the snapshot is abs
 
 For the SQLite adapter, the event table and read model tables must stay transactionally aligned.
 
+### 3.1 Schema Version Must Be Explicit
+
+Adapters must expose store metadata through `getStoreInfo`.
+
+The current schema version is `1`.
+
+The SQLite adapter must persist schema metadata in `substrate_metadata`, set SQLite `user_version`, and refuse to open a database whose schema version is newer than the runtime supports. Silent best-effort reads of future schemas are not allowed.
+
+The file adapter must write the schema version into `snapshot.json` and report the same version through `getStoreInfo`.
+
 ### 4. Scope Isolation
 
 All node, relation, feedback, and context compilation behavior is scoped.
@@ -85,6 +95,8 @@ The test suite currently checks:
 - scope-local relations cannot leak across scopes;
 - file snapshots can be rebuilt from append-only events;
 - concurrent writes are serialized with contiguous event sequences;
+- store schema version is reported by both adapters;
+- SQLite schema metadata is persisted and future unsupported schemas are rejected;
 - Runtime snapshot import opens source SQLite read-only.
 
 ## Non-Goals

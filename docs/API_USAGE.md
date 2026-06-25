@@ -34,6 +34,19 @@ const store = await openFileAionisSubstrate({
 
 Both adapters expose the same contract.
 
+## Inspect Store Metadata
+
+```ts
+const info = await store.getStoreInfo();
+
+console.log(info.adapter);
+console.log(info.schemaVersion);
+console.log(info.lastSequence);
+console.log(info.eventCount);
+```
+
+The schema version is part of the substrate contract. A newer unsupported SQLite schema is rejected on open instead of being read best-effort.
+
 ## Write Execution Memory
 
 ```ts
@@ -90,8 +103,8 @@ await store.recordFeedback({
   scope: "repo-a",
   memoryId: "route-current",
   outcome: "positive",
-  note: "The current route passed the verifier.",
-  source: "product_facade",
+  strength: "strong",
+  evidenceRef: "trace://run-2026-06-25/verifier",
   runId: "run-2026-06-25",
 });
 ```
