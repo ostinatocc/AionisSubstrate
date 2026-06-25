@@ -22,6 +22,8 @@ type Args = {
   outputDir: string;
   scenarioCount: number;
   generatedCount: number;
+  chainProbeCount: number;
+  concurrency: number;
   seed: string;
   maxPerBucket?: number;
 };
@@ -95,8 +97,32 @@ type ReopenReport = {
   };
 };
 
+type ChainProbeReport = {
+  probe_id: string;
+  scope: string;
+  expected_surfaces: RuntimeReferenceSurfaces;
+  substrate_surfaces: RuntimeReferenceSurfaces;
+  parity: {
+    exact: boolean;
+    bucket_reports: ReturnType<typeof compareSurfaces>;
+  };
+  event_counts: Record<AionisEvent["type"], number>;
+  relation_count: number;
+  transition_verified: boolean;
+};
+
+type ChainProbeReopenReport = {
+  probe_id: string;
+  scope: string;
+  persisted_surfaces: RuntimeReferenceSurfaces;
+  parity: {
+    exact: boolean;
+    bucket_reports: ReturnType<typeof compareSurfaces>;
+  };
+};
+
 type RuntimeDualWriteExperimentReport = {
-  contract_version: "aionis_runtime_dual_write_experiment_report_v2";
+  contract_version: "aionis_runtime_dual_write_experiment_report_v3";
   generated_at: string;
   runtime_root: string;
   runtime_base_url: string;
@@ -106,15 +132,22 @@ type RuntimeDualWriteExperimentReport = {
   scenario_count: number;
   fixed_scenario_count: number;
   generated_scenario_count: number;
+  chain_probe_count: number;
   exact_scenario_count: number;
   persisted_exact_scenario_count: number;
   write_integrity_pass_count: number;
+  chain_probe_pass_count: number;
+  persisted_chain_probe_pass_count: number;
   failed_scenario_count: number;
+  failed_chain_probe_count: number;
   max_per_bucket: number | null;
+  concurrency: number;
   seed: string;
   notes: string[];
   scenarios: ScenarioReport[];
   reopen: ReopenReport[];
+  chain_probes: ChainProbeReport[];
+  chain_probe_reopen: ChainProbeReopenReport[];
 };
 
 const SCENARIOS: DualWriteScenario[] = [
@@ -228,7 +261,7 @@ const GENERATED_DOMAINS = [
 function usage(): string {
   return [
     "Usage:",
-    "  npm run check:runtime-dual-write -- --runtime-root /path/AionisRuntime-focused [--generated-count 8]",
+    "  npm run check:runtime-dual-write -- --runtime-root /path/AionisRuntime-focused [--generated-count 8] [--concurrency 4]",
     "",
     "Starts focused Runtime, runs real observe/guide/feedback/measure loops, writes the same observed",
     "execution states into an isolated Substrate SQLite store, and compares guide buckets before and after reopen.",
@@ -261,6 +294,18 @@ function parseArgs(argv: string[]): Args {
       if (!Number.isInteger(parsed) || parsed < 0) throw new Error("--generated-count must be a non-negative integer");
       args.generatedCount = parsed;
       i += 1;
+    } else if (flag === "--chain-probe-count") {
+      if (!value) throw new Error("--chain-probe-count requires a value");
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed < 0) throw new Error("--chain-probe-count must be a non-negative integer");
+      args.chainProbeCount = parsed;
+      i += 1;
+    } else if (flag === "--concurrency") {
+      if (!value) throw new Error("--concurrency requires a value");
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed < 1) throw new Error("--concurrency must be a positive integer");
+      args.concurrency = parsed;
+      i += 1;
     } else if (flag === "--seed") {
       if (!value) throw new Error("--seed requires a value");
       args.seed = value;
@@ -284,6 +329,8 @@ function parseArgs(argv: string[]): Args {
     outputDir: args.outputDir ?? resolve("reports", `runtime-dual-write-${new Date().toISOString().replace(/[:.]/g, "-")}`),
     scenarioCount: args.scenarioCount ?? SCENARIOS.length,
     generatedCount: args.generatedCount ?? 0,
+    chainProbeCount: args.chainProbeCount ?? 0,
+    concurrency: args.concurrency ?? 1,
     seed: args.seed ?? "runtime-dual-write-v2",
     maxPerBucket: args.maxPerBucket,
   };
@@ -446,6 +493,26 @@ function contextSurfaces(context: AionisCompiledContext): RuntimeReferenceSurfac
     do_not_use: context.do_not_use.map((node) => node.id),
     rehydrate: context.rehydrate.map((node) => node.id),
   };
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) return;
+      results[index] = await fn(items[index], index);
+    }
+  }));
+  return results;
 }
 
 async function writeJson(path: string, value: unknown): Promise<void> {
@@ -804,6 +871,181 @@ async function runReopenCheck(input: {
   }
 }
 
+async function runChainProbe(input: {
+  store: AionisSubstrate;
+  probeId: string;
+  maxPerBucket?: number;
+}): Promise<ChainProbeReport> {
+  const scope = `substrate-chain-probe:${input.probeId}:${randomUUID().slice(0, 8)}`;
+  const currentId = `${input.probeId}:current`;
+  const priorId = `${input.probeId}:prior`;
+  const failedId = `${input.probeId}:failed`;
+  const inspectId = `${input.probeId}:inspect`;
+  const rawId = `${input.probeId}:raw-payload`;
+
+  await input.store.putNode({
+    id: currentId,
+    scope,
+    kind: "execution",
+    title: "Accepted active chain route",
+    summary: "Current accepted route with verified outcome evidence.",
+    lifecycle: "active",
+    authority: "verified",
+    confidence: 0.97,
+    targetFiles: ["src/chain/current.ts"],
+  });
+  await input.store.putNode({
+    id: priorId,
+    scope,
+    kind: "execution",
+    title: "Prior route now superseded",
+    summary: "Older route that is related to the same target but superseded by current evidence.",
+    lifecycle: "active",
+    authority: "trusted",
+    confidence: 0.82,
+    targetFiles: ["src/chain/current.ts"],
+  });
+  await input.store.putNode({
+    id: failedId,
+    scope,
+    kind: "execution",
+    title: "Failed route pending lifecycle transition",
+    summary: "A route that was initially recorded and then blocked after outcome attribution.",
+    lifecycle: "candidate",
+    authority: "advisory",
+    confidence: 0.45,
+    targetFiles: ["src/chain/failed.ts"],
+  });
+  await input.store.putNode({
+    id: inspectId,
+    scope,
+    kind: "procedure",
+    title: "Procedure candidate still needs inspection",
+    summary: "Potential reusable procedure without enough authority for direct use.",
+    lifecycle: "candidate",
+    authority: "advisory",
+    confidence: 0.58,
+    targetFiles: ["src/chain/current.ts"],
+  });
+  await input.store.putNode({
+    id: rawId,
+    scope,
+    kind: "trace_pointer",
+    title: "Raw payload pointer",
+    summary: "Raw terminal payload should stay out of direct prompt context unless recovered.",
+    lifecycle: "candidate",
+    authority: "advisory",
+    confidence: 0.5,
+    targetFiles: ["src/chain/raw.log"],
+    payloadRef: `trace://chain-probe/${input.probeId}/raw`,
+  });
+
+  await input.store.putRelation({
+    scope,
+    kind: "supersedes",
+    sourceId: currentId,
+    targetId: priorId,
+    confidence: 0.91,
+    reasons: ["current verified route supersedes prior route"],
+  });
+  await input.store.putRelation({
+    scope,
+    kind: "invalidates",
+    sourceId: currentId,
+    targetId: failedId,
+    confidence: 0.88,
+    reasons: ["current route invalidates the failed branch"],
+  });
+  await input.store.putRelation({
+    scope,
+    kind: "supports",
+    sourceId: currentId,
+    targetId: inspectId,
+    confidence: 0.74,
+    reasons: ["current route supports reviewing the procedure candidate"],
+  });
+  await input.store.putRelation({
+    scope,
+    kind: "requires_payload",
+    sourceId: currentId,
+    targetId: rawId,
+    confidence: 0.83,
+    reasons: ["raw terminal evidence must be rehydrated before direct use"],
+  });
+
+  const transitioned = await input.store.transitionLifecycle({
+    scope,
+    memoryId: failedId,
+    lifecycle: "blocked",
+    authority: "rejected",
+    confidence: 0.22,
+    reason: "failed branch received negative outcome evidence",
+  });
+
+  const compiled = await input.store.compileContext({
+    scope,
+    query: "continue the verified current chain route",
+    maxPerBucket: input.maxPerBucket,
+  });
+  const substrateSurfaces = contextSurfaces(compiled);
+  const expectedSurfaces: RuntimeReferenceSurfaces = {
+    use_now: [currentId],
+    inspect_before_use: [inspectId],
+    do_not_use: [failedId, priorId],
+    rehydrate: [rawId],
+  };
+  const bucketReports = compareSurfaces(substrateSurfaces, expectedSurfaces);
+  const events = await input.store.listEvents();
+  const relations = await input.store.listRelations(scope);
+  return {
+    probe_id: input.probeId,
+    scope,
+    expected_surfaces: expectedSurfaces,
+    substrate_surfaces: substrateSurfaces,
+    parity: {
+      exact: bucketReports.every((bucket) => bucket.exact),
+      bucket_reports: bucketReports,
+    },
+    event_counts: eventCountsForScope(events, scope),
+    relation_count: relations.length,
+    transition_verified: transitioned.lifecycle === "blocked"
+      && transitioned.authority === "rejected"
+      && transitioned.confidence === 0.22,
+  };
+}
+
+async function runReopenChainProbeCheck(input: {
+  substratePath: string;
+  chainProbes: ChainProbeReport[];
+  maxPerBucket?: number;
+}): Promise<ChainProbeReopenReport[]> {
+  const store = await openSqliteAionisSubstrate({ path: input.substratePath });
+  try {
+    const reports: ChainProbeReopenReport[] = [];
+    for (const probe of input.chainProbes) {
+      const compiled = await store.compileContext({
+        scope: probe.scope,
+        query: `reopen chain probe ${probe.probe_id}`,
+        maxPerBucket: input.maxPerBucket,
+      });
+      const persistedSurfaces = contextSurfaces(compiled);
+      const bucketReports = compareSurfaces(persistedSurfaces, probe.expected_surfaces);
+      reports.push({
+        probe_id: probe.probe_id,
+        scope: probe.scope,
+        persisted_surfaces: persistedSurfaces,
+        parity: {
+          exact: bucketReports.every((bucket) => bucket.exact),
+          bucket_reports: bucketReports,
+        },
+      });
+    }
+    return reports;
+  } finally {
+    await store.close();
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   await mkdir(args.outputDir, { recursive: true });
@@ -821,20 +1063,37 @@ async function main(): Promise<void> {
       scenario,
       scenarioSource: "generated" as const,
     }));
-    for (const { scenario, scenarioSource } of [...fixedScenarios, ...generated]) {
-      scenarioReports.push(await runScenario({
+    scenarioReports.push(...await mapWithConcurrency(
+      [...fixedScenarios, ...generated],
+      args.concurrency,
+      async ({ scenario, scenarioSource }) => await runScenario({
         args,
         sdk,
         handle,
         store,
         scenario,
         scenarioSource,
-      }));
-    }
+      }),
+    ));
+    const chainProbeIds = Array.from({ length: args.chainProbeCount }, (_, index) => `chain-${index + 1}`);
+    const chainProbeReports = await mapWithConcurrency(
+      chainProbeIds,
+      args.concurrency,
+      async (probeId) => await runChainProbe({
+        store,
+        probeId,
+        maxPerBucket: args.maxPerBucket,
+      }),
+    );
     await store.close();
     const reopenReports = await runReopenCheck({
       substratePath,
       scenarios: scenarioReports,
+      maxPerBucket: args.maxPerBucket,
+    });
+    const chainProbeReopenReports = await runReopenChainProbeCheck({
+      substratePath,
+      chainProbes: chainProbeReports,
       maxPerBucket: args.maxPerBucket,
     });
 
@@ -845,6 +1104,8 @@ async function main(): Promise<void> {
       && scenario.write_integrity.invalid_feedback_rejected
       && scenario.write_integrity.event_count_unchanged
     )).length;
+    const chainProbePassCount = chainProbeReports.filter((probe) => probe.parity.exact && probe.transition_verified).length;
+    const persistedChainProbePassCount = chainProbeReopenReports.filter((probe) => probe.parity.exact).length;
     const reopenByScenario = new Map(reopenReports.map((scenario) => [scenario.scenario_id, scenario]));
     const failedScenarioCount = scenarioReports.filter((scenario) => {
       const reopen = reopenByScenario.get(scenario.scenario_id);
@@ -853,8 +1114,13 @@ async function main(): Promise<void> {
         && scenario.write_integrity.event_count_unchanged;
       return !scenario.parity.exact || !reopen?.parity.exact || !writeIntegrityPassed;
     }).length;
+    const reopenByChainProbe = new Map(chainProbeReopenReports.map((probe) => [probe.probe_id, probe]));
+    const failedChainProbeCount = chainProbeReports.filter((probe) => {
+      const reopen = reopenByChainProbe.get(probe.probe_id);
+      return !probe.parity.exact || !probe.transition_verified || !reopen?.parity.exact;
+    }).length;
     const report: RuntimeDualWriteExperimentReport = {
-      contract_version: "aionis_runtime_dual_write_experiment_report_v2",
+      contract_version: "aionis_runtime_dual_write_experiment_report_v3",
       generated_at: new Date().toISOString(),
       runtime_root: args.runtimeRoot,
       runtime_base_url: handle.baseUrl,
@@ -864,21 +1130,29 @@ async function main(): Promise<void> {
       scenario_count: scenarioReports.length,
       fixed_scenario_count: fixedScenarios.length,
       generated_scenario_count: generated.length,
+      chain_probe_count: chainProbeReports.length,
       exact_scenario_count: exactScenarioCount,
       persisted_exact_scenario_count: persistedExactScenarioCount,
       write_integrity_pass_count: writeIntegrityPassCount,
+      chain_probe_pass_count: chainProbePassCount,
+      persisted_chain_probe_pass_count: persistedChainProbePassCount,
       failed_scenario_count: failedScenarioCount,
+      failed_chain_probe_count: failedChainProbeCount,
       max_per_bucket: args.maxPerBucket ?? null,
+      concurrency: args.concurrency,
       seed: args.seed,
       notes: [
         "This experiment runs real focused Runtime observe/guide/feedback/measure calls.",
         "Substrate is written as an external sidecar using the same observed memory ids and outcomes.",
         "Generated scenarios are deterministic from the recorded seed and do not mutate Runtime policy.",
         "Write integrity probes verify invalid sidecar relation/feedback writes do not append partial events.",
+        "Chain probes validate Substrate lifecycle transitions and relation chains in independent scopes.",
         "This is not Runtime storage replacement and does not mutate AionisRuntime-focused source code.",
       ],
       scenarios: scenarioReports,
       reopen: reopenReports,
+      chain_probes: chainProbeReports,
+      chain_probe_reopen: chainProbeReopenReports,
     };
     const reportPath = join(args.outputDir, "summary.json");
     await writeJson(reportPath, report);
@@ -889,12 +1163,16 @@ async function main(): Promise<void> {
       scenario_count: report.scenario_count,
       fixed_scenario_count: report.fixed_scenario_count,
       generated_scenario_count: report.generated_scenario_count,
+      chain_probe_count: report.chain_probe_count,
       exact_scenario_count: report.exact_scenario_count,
       persisted_exact_scenario_count: report.persisted_exact_scenario_count,
       write_integrity_pass_count: report.write_integrity_pass_count,
+      chain_probe_pass_count: report.chain_probe_pass_count,
+      persisted_chain_probe_pass_count: report.persisted_chain_probe_pass_count,
       failed_scenario_count: report.failed_scenario_count,
+      failed_chain_probe_count: report.failed_chain_probe_count,
     }, null, 2));
-    if (report.failed_scenario_count > 0) process.exitCode = 1;
+    if (report.failed_scenario_count > 0 || report.failed_chain_probe_count > 0) process.exitCode = 1;
   } finally {
     await store.close().catch(() => undefined);
     stopRuntime(handle);

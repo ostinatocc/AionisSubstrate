@@ -27,7 +27,8 @@ The runner executes this loop for each scenario:
 9. Call `execution.feedbackFromOutcome` and `execution.measureRun`.
 10. Write matching Substrate feedback.
 11. Probe invalid Substrate relation/feedback writes and verify no partial events are appended.
-12. Close and reopen Substrate, then compare persisted surfaces again.
+12. Optionally run independent Substrate lifecycle/relation chain probes.
+13. Close and reopen Substrate, then compare persisted surfaces again.
 
 The compared surfaces are:
 
@@ -41,7 +42,9 @@ The compared surfaces are:
 ```bash
 npm run check:runtime-dual-write -- \
   --runtime-root /Volumes/ziel/AionisRuntime-focused \
-  --generated-count 8
+  --generated-count 8 \
+  --chain-probe-count 4 \
+  --concurrency 4
 ```
 
 Optional flags:
@@ -49,6 +52,8 @@ Optional flags:
 ```bash
 --scenario-count 4
 --generated-count 24
+--chain-probe-count 4
+--concurrency 4
 --seed runtime-dual-write-v2
 --max-per-bucket 8
 --output-dir reports/runtime-dual-write-manual
@@ -73,7 +78,22 @@ The report includes:
 - Substrate event counts
 - generated/fixed scenario counts
 - invalid write rollback probes
+- chain probe counts for lifecycle transitions, supersession, invalidation, support, and payload relations
 - persisted parity after close/reopen
+
+## Chain Probes
+
+Chain probes run in independent Substrate scopes after the real Runtime sidecar scenarios.
+
+Each probe writes:
+
+- one verified active memory expected in `use_now`
+- one candidate procedure expected in `inspect_before_use`
+- one prior memory superseded by the active memory
+- one failed branch invalidated by the active memory and transitioned to `blocked`
+- one raw payload pointer that requires rehydration
+
+The probe then compiles context, compares the four admission buckets, closes and reopens the SQLite store, and compares again. This validates the substrate relation and lifecycle contract without adding benchmark-specific policy to focused Runtime.
 
 ## Boundary
 
