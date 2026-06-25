@@ -15,7 +15,8 @@
     "check:runtime-corpus": "node scripts/runtime-snapshot-corpus.ts",
     "check:runtime-reference-corpus": "node scripts/runtime-reference-corpus.ts",
     "make:runtime-product-reference": "node scripts/runtime-product-reference-fixture.ts",
-    "check:external-admission-parity": "node scripts/external-admission-parity.ts"
+    "check:external-admission-parity": "node scripts/external-admission-parity.ts",
+    "check:runtime-dual-write": "node scripts/runtime-dual-write-experiment.ts"
   },
   "engines": {
     "node": ">=24"
