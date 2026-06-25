@@ -22,3 +22,12 @@ export {
   type RuntimeSnapshotCorpusScopeCandidate,
   type RuntimeSnapshotCorpusScopeReport,
 } from "./runtime-snapshot-corpus.ts";
+export {
+  runRuntimeReferenceCorpus,
+  type RuntimeReferenceCandidate,
+  type RuntimeReferenceCorpusMatchedReport,
+  type RuntimeReferenceCorpusOptions,
+  type RuntimeReferenceCorpusReport,
+  type RuntimeReferenceCorpusUnmatchedReport,
+  type RuntimeReferenceScopeCandidate,
+} from "./runtime-reference-corpus.ts";

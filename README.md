@@ -60,6 +60,8 @@ Adapter consistency requirements are documented in [docs/ADAPTER_CONTRACT.md](do
 
 Runtime snapshot import is documented in [docs/RUNTIME_SNAPSHOT_IMPORT.md](docs/RUNTIME_SNAPSHOT_IMPORT.md).
 
+Runtime reference corpus parity is documented in [docs/RUNTIME_REFERENCE_CORPUS.md](docs/RUNTIME_REFERENCE_CORPUS.md).
+
 ## Quick Test
 
 ```bash
@@ -113,6 +115,20 @@ npm run check:runtime-corpus -- \
 ```
 
 This scans Runtime Lite SQLite files read-only, imports selected scopes into temporary Substrate stores, and writes an aggregate report under `reports/runtime-snapshot-corpus-*`.
+
+Runtime reference corpus parity:
+
+```bash
+npm run check:runtime-reference-corpus -- \
+  --source-root /path/to/AionisRuntime-focused/.tmp \
+  --reference-root /path/to/AionisRuntime-focused/docs/examples \
+  --max-source-files all \
+  --max-scopes 100 \
+  --max-scopes-per-file 20 \
+  --max-references all
+```
+
+This scans Runtime `agent_context` / `memory_decision_trace` JSON and only counts a reference when its memory ids overlap a real Runtime SQLite scope. Unmatched demo/export files are reported separately.
 
 ## Development Checks
 
