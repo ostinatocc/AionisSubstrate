@@ -7,6 +7,7 @@ All notable changes to Aionis Substrate are documented here.
 ### Added
 
 - Runtime live sidecar API and CLI command for checkpointed, repeated Runtime Lite SQLite mirroring into a separate Substrate target.
+- Runtime live sidecar bounded watch mode with interval polling, aggregate reports, and a single-instance checkpoint lock.
 - Runtime live sidecar documentation covering checkpoint behavior, dry runs, and product boundaries.
 
 ## 0.1.3 - 2026-06-26

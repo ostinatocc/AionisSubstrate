@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   openSqliteAionisSubstrate,
   runRuntimeLiveSidecarOnce,
+  runRuntimeLiveSidecarWatch,
   type RuntimeLiveSidecarCheckpoint,
 } from "../src/index.ts";
 
@@ -182,6 +183,73 @@ test("Runtime live sidecar ignores a stale checkpoint when the target store is e
       assert.deepEqual((await secondStore.listNodes("repo-a")).map((node) => node.id), ["runtime-current"]);
     } finally {
       await secondStore.close();
+    }
+  });
+});
+
+test("Runtime live sidecar watch runs a bounded interval loop under a lock", async () => {
+  await withTempDir(async (dir) => {
+    const source = join(dir, "runtime.sqlite");
+    const target = join(dir, "substrate.sqlite");
+    const checkpoint = join(dir, "checkpoint.json");
+    const lock = join(dir, "sidecar.lock");
+    createRuntimeLiteSource(source);
+    insertRuntimeNode(source, "runtime-current", "Use src/runtime.ts after verifier passed.", "2026-06-01T00:00:00.000Z");
+
+    const store = await openSqliteAionisSubstrate({ path: target });
+    try {
+      const report = await runRuntimeLiveSidecarWatch({
+        sourcePath: source,
+        target: store,
+        checkpointPath: checkpoint,
+        scope: "repo-a",
+        intervalMs: 1,
+        iterations: 2,
+        lockPath: lock,
+      });
+      assert.equal(report.contract_version, "aionis_runtime_live_sidecar_watch_report_v1");
+      assert.equal(report.iterations_completed, 2);
+      assert.equal(report.lock_path, lock);
+      assert.equal(report.reports[0].apply_summary.nodes.applied, 1);
+      assert.equal(report.reports[1].apply_summary.nodes.applied, 0);
+      assert.equal(report.reports[1].apply_summary.nodes.unchanged, 1);
+      assert.equal(report.apply_summary.nodes.attempted, 2);
+      assert.equal(report.apply_summary.nodes.applied, 1);
+      assert.equal(report.apply_summary.nodes.unchanged, 1);
+      await assert.rejects(readFile(lock, "utf8"), { code: "ENOENT" });
+    } finally {
+      await store.close();
+    }
+  });
+});
+
+test("Runtime live sidecar watch rejects an existing lock", async () => {
+  await withTempDir(async (dir) => {
+    const source = join(dir, "runtime.sqlite");
+    const target = join(dir, "substrate.sqlite");
+    const checkpoint = join(dir, "checkpoint.json");
+    const lock = join(dir, "sidecar.lock");
+    createRuntimeLiteSource(source);
+    insertRuntimeNode(source, "runtime-current", "Use src/runtime.ts after verifier passed.", "2026-06-01T00:00:00.000Z");
+    await writeFile(lock, "locked\n", "utf8");
+
+    const store = await openSqliteAionisSubstrate({ path: target });
+    try {
+      await assert.rejects(
+        runRuntimeLiveSidecarWatch({
+          sourcePath: source,
+          target: store,
+          checkpointPath: checkpoint,
+          scope: "repo-a",
+          intervalMs: 1,
+          iterations: 1,
+          lockPath: lock,
+        }),
+        /lock already exists/,
+      );
+      assert.equal((await store.getStoreInfo()).eventCount, 0);
+    } finally {
+      await store.close();
     }
   });
 });

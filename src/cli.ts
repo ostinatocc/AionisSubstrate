@@ -10,6 +10,7 @@ import {
   restoreAionisSubstrateBackupToFile,
   restoreAionisSubstrateBackupToSqlite,
   runRuntimeLiveSidecarOnce,
+  runRuntimeLiveSidecarWatch,
   runRuntimeSidecarCheck,
   verifyAionisSubstrateBackup,
   writeAionisSubstrateBackupFile,
@@ -57,6 +58,10 @@ type RuntimeLiveSidecarArgs = RuntimeImportArgs & {
   checkpoint?: string;
   dryRun?: boolean;
   output?: string;
+  watch?: boolean;
+  intervalMs?: number;
+  iterations?: number;
+  lock?: string | null;
 };
 
 type SidecarArgs = {
@@ -83,7 +88,7 @@ function rootUsage(): string {
     "Usage:",
     "  aionis-substrate sidecar --source <runtime.sqlite> --scope <scope> [--reference <guide.json>]",
     "  aionis-substrate import-runtime-snapshot --source <runtime.sqlite> --target <store> --adapter sqlite",
-    "  aionis-substrate live-sidecar --source <runtime.sqlite> --target <store> --adapter sqlite --checkpoint <checkpoint.json>",
+    "  aionis-substrate live-sidecar --source <runtime.sqlite> --target <store> --adapter sqlite --checkpoint <checkpoint.json> [--watch --iterations <n>]",
     "  aionis-substrate preview-context --adapter sqlite --path <store> --scope <scope>",
     "  aionis-substrate inspect --adapter sqlite --path <store> [--scope <scope>]",
     "  aionis-substrate backup --adapter sqlite --path <store> --output <backup.json>",
@@ -148,6 +153,11 @@ function runtimeLiveSidecarUsage(): string {
     "Options:",
     "  --dry-run                Report what would be applied without writing target or checkpoint.",
     "  --output <path>          Also write the JSON report to a file.",
+    "  --watch                  Run a bounded watch loop instead of a single pass.",
+    "  --iterations <n>         Required with --watch. Number of sync passes to run.",
+    "  --interval-ms <n>        Delay between watch passes. Defaults to 5000.",
+    "  --lock <path>            Watch lock path. Defaults to <checkpoint>.lock.",
+    "  --no-lock                Disable the watch lock. Intended for tests only.",
   ].join("\n");
 }
 
@@ -434,6 +444,20 @@ function parseRuntimeLiveSidecarArgs(argv: string[]): RuntimeLiveSidecarArgs {
       i += 1;
     } else if (flag === "--dry-run") {
       args.dryRun = true;
+    } else if (flag === "--watch") {
+      args.watch = true;
+    } else if (flag === "--iterations") {
+      args.iterations = parseInteger(value, "--iterations");
+      i += 1;
+    } else if (flag === "--interval-ms") {
+      args.intervalMs = parseInteger(value, "--interval-ms");
+      i += 1;
+    } else if (flag === "--lock") {
+      if (!value) throw new Error("--lock requires a value");
+      args.lock = value;
+      i += 1;
+    } else if (flag === "--no-lock") {
+      args.lock = null;
     } else if (flag === "--help" || flag === "-h") {
       console.log(runtimeLiveSidecarUsage());
       process.exit(0);
@@ -750,6 +774,27 @@ async function runRuntimeLiveSidecar(argv: string[]): Promise<void> {
     path: args.target,
   });
   try {
+    if (args.watch) {
+      if (args.iterations === undefined) throw new Error("--iterations is required with --watch");
+      const report = await runRuntimeLiveSidecarWatch({
+        sourcePath: resolve(args.source),
+        target: store,
+        checkpointPath: resolve(args.checkpoint),
+        scope: args.scope,
+        limit: args.limit,
+        dryRun: args.dryRun,
+        intervalMs: args.intervalMs ?? 5000,
+        iterations: args.iterations,
+        lockPath: args.lock,
+      });
+      if (args.output) {
+        const output = resolve(args.output);
+        await mkdir(dirname(output), { recursive: true });
+        await writeFile(output, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+      }
+      console.log(JSON.stringify(report, null, 2));
+      return;
+    }
     const report = await runRuntimeLiveSidecarOnce({
       sourcePath: resolve(args.source),
       target: store,

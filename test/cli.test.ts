@@ -277,3 +277,47 @@ test("CLI live-sidecar incrementally mirrors Runtime Lite evidence with a checkp
     assert.equal(second.store_after.eventCount, first.store_after.eventCount);
   });
 });
+
+test("CLI live-sidecar watch runs bounded iterations and reports aggregate stats", async () => {
+  await withTempDir(async (dir) => {
+    const source = join(dir, "runtime.sqlite");
+    const target = join(dir, "substrate.sqlite");
+    const checkpoint = join(dir, "checkpoint.json");
+    const lock = join(dir, "sidecar.lock");
+    createRuntimeLiteSource(source);
+    const report = runCli([
+      "live-sidecar",
+      "--source",
+      source,
+      "--target",
+      target,
+      "--adapter",
+      "sqlite",
+      "--checkpoint",
+      checkpoint,
+      "--scope",
+      "repo-a",
+      "--watch",
+      "--iterations",
+      "2",
+      "--interval-ms",
+      "1",
+      "--lock",
+      lock,
+    ]) as {
+      contract_version: string;
+      iterations_completed: number;
+      lock_path: string;
+      apply_summary: { nodes: { attempted: number; applied: number; unchanged: number } };
+      reports: Array<{ apply_summary: { nodes: { applied: number; unchanged: number } } }>;
+    };
+    assert.equal(report.contract_version, "aionis_runtime_live_sidecar_watch_report_v1");
+    assert.equal(report.iterations_completed, 2);
+    assert.equal(report.lock_path, lock);
+    assert.equal(report.apply_summary.nodes.attempted, 2);
+    assert.equal(report.apply_summary.nodes.applied, 1);
+    assert.equal(report.apply_summary.nodes.unchanged, 1);
+    assert.equal(report.reports[0].apply_summary.nodes.applied, 1);
+    assert.equal(report.reports[1].apply_summary.nodes.unchanged, 1);
+  });
+});

@@ -44,6 +44,7 @@ npx aionis-substrate backup --adapter sqlite --path ./substrate.sqlite --output 
 npx aionis-substrate restore --adapter sqlite --path ./restored.sqlite --input ./backup.json
 npx aionis-substrate compact --adapter sqlite --path ./substrate.sqlite
 npx aionis-substrate live-sidecar --source ./runtime.sqlite --target ./substrate.sqlite --adapter sqlite --checkpoint ./runtime-live-checkpoint.json --scope repo-a
+npx aionis-substrate live-sidecar --source ./runtime.sqlite --target ./substrate.sqlite --adapter sqlite --checkpoint ./runtime-live-checkpoint.json --scope repo-a --watch --iterations 20 --interval-ms 5000
 ```
 
 ## Goal
@@ -221,6 +222,8 @@ npx aionis-substrate live-sidecar \
 ```
 
 This opens Runtime SQLite read-only, writes only new or changed mapped evidence into the separate Substrate target, and atomically updates a checkpoint file. Re-running the command should report unchanged evidence instead of replaying the same rows.
+
+Add `--watch --iterations <n> --interval-ms <ms>` for a bounded polling loop with a single-instance checkpoint lock.
 
 Runtime reference corpus parity:
 

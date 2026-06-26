@@ -153,6 +153,24 @@ npx aionis-substrate live-sidecar \
   --dry-run
 ```
 
+Use `--watch` for a bounded polling loop with a single-instance lock:
+
+```bash
+npx aionis-substrate live-sidecar \
+  --source /path/to/aionis-runtime-lite.sqlite \
+  --target ./substrate.sqlite \
+  --adapter sqlite \
+  --checkpoint ./runtime-live-checkpoint.json \
+  --scope repo-a \
+  --watch \
+  --iterations 20 \
+  --interval-ms 5000
+```
+
+The default lock path is `<checkpoint>.lock`. Override it with `--lock <path>`.
+Use `--no-lock` only for controlled tests. The watch report contract is
+`aionis_runtime_live_sidecar_watch_report_v1`.
+
 The report contract is `aionis_runtime_live_sidecar_report_v1`. Read `import_summary` as source coverage
 and `apply_summary` as the checkpointed sidecar result.
 

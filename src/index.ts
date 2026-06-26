@@ -54,8 +54,11 @@ export {
 } from "./runtime-sidecar-check.ts";
 export {
   runRuntimeLiveSidecarOnce,
+  runRuntimeLiveSidecarWatch,
   type RuntimeLiveSidecarApplyStats,
   type RuntimeLiveSidecarCheckpoint,
   type RuntimeLiveSidecarOptions,
   type RuntimeLiveSidecarReport,
+  type RuntimeLiveSidecarWatchOptions,
+  type RuntimeLiveSidecarWatchReport,
 } from "./runtime-live-sidecar.ts";

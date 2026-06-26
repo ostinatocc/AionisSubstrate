@@ -44,6 +44,42 @@ npx aionis-substrate live-sidecar \
   --dry-run
 ```
 
+## Bounded Watch Loop
+
+Use `--watch` when a host wants Substrate to poll Runtime Lite repeatedly in one process:
+
+```bash
+npx aionis-substrate live-sidecar \
+  --source /path/to/aionis-runtime-lite.sqlite \
+  --target ./substrate.sqlite \
+  --adapter sqlite \
+  --checkpoint ./runtime-live-checkpoint.json \
+  --scope repo-a \
+  --watch \
+  --iterations 20 \
+  --interval-ms 5000
+```
+
+`--watch` is intentionally bounded in this package version. The host chooses the number
+of iterations and can restart the command through cron, launchd, systemd, a supervisor,
+or its own Agent host process.
+
+The watch command creates a single-instance lock by default at:
+
+```text
+<checkpoint>.lock
+```
+
+Override it with `--lock <path>`. Use `--no-lock` only for controlled tests.
+
+The watch report contract is `aionis_runtime_live_sidecar_watch_report_v1`.
+It contains:
+
+- `reports`: every per-iteration `aionis_runtime_live_sidecar_report_v1`;
+- `apply_summary`: aggregate attempted/applied/unchanged counts across all iterations;
+- `lock_path`: the lock used for this run;
+- `iterations_requested` and `iterations_completed`.
+
 ## Report
 
 The report contract is `aionis_runtime_live_sidecar_report_v1`.

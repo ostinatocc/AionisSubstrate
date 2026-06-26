@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
   importRuntimeLiteSnapshot,
@@ -74,10 +74,72 @@ export type RuntimeLiveSidecarOptions = {
   dryRun?: boolean;
 };
 
+export type RuntimeLiveSidecarWatchOptions = RuntimeLiveSidecarOptions & {
+  intervalMs: number;
+  iterations: number;
+  lockPath?: string | null;
+};
+
+export type RuntimeLiveSidecarWatchReport = {
+  contract_version: "aionis_runtime_live_sidecar_watch_report_v1";
+  run_id: string;
+  started_at: string;
+  finished_at: string;
+  source_path: string;
+  scope: string | null;
+  checkpoint_path: string;
+  lock_path: string | null;
+  dry_run: boolean;
+  interval_ms: number;
+  iterations_requested: number;
+  iterations_completed: number;
+  reports: RuntimeLiveSidecarReport[];
+  apply_summary: RuntimeLiveSidecarReport["apply_summary"];
+  warnings: string[];
+};
+
 type RuntimeLiveFingerprintKind = keyof RuntimeLiveSidecarCheckpoint["fingerprints"];
+
+type RuntimeLiveSidecarLock = {
+  path: string;
+  release(): Promise<void>;
+};
 
 function emptyStats(): RuntimeLiveSidecarApplyStats {
   return { attempted: 0, applied: 0, unchanged: 0 };
+}
+
+function addStats(left: RuntimeLiveSidecarApplyStats, right: RuntimeLiveSidecarApplyStats): RuntimeLiveSidecarApplyStats {
+  return {
+    attempted: left.attempted + right.attempted,
+    applied: left.applied + right.applied,
+    unchanged: left.unchanged + right.unchanged,
+  };
+}
+
+function emptyApplySummary(): RuntimeLiveSidecarReport["apply_summary"] {
+  return {
+    nodes: emptyStats(),
+    relations: emptyStats(),
+    feedback: emptyStats(),
+    decisions: emptyStats(),
+  };
+}
+
+function addApplySummary(
+  left: RuntimeLiveSidecarReport["apply_summary"],
+  right: RuntimeLiveSidecarReport["apply_summary"],
+): RuntimeLiveSidecarReport["apply_summary"] {
+  return {
+    nodes: addStats(left.nodes, right.nodes),
+    relations: addStats(left.relations, right.relations),
+    feedback: addStats(left.feedback, right.feedback),
+    decisions: addStats(left.decisions, right.decisions),
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 }
 
 function emptyCheckpoint(sourcePath: string, scope: string | null): RuntimeLiveSidecarCheckpoint {
@@ -169,6 +231,40 @@ async function writeCheckpoint(path: string, checkpoint: RuntimeLiveSidecarCheck
   const tempPath = `${path}.tmp-${process.pid}-${randomUUID()}`;
   await writeFile(tempPath, `${JSON.stringify(checkpoint, null, 2)}\n`, "utf8");
   await rename(tempPath, path);
+}
+
+async function acquireLock(path: string, metadata: Record<string, unknown>): Promise<RuntimeLiveSidecarLock> {
+  await mkdir(dirname(path), { recursive: true });
+  let handle;
+  try {
+    handle = await open(path, "wx");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error(`Runtime live sidecar lock already exists: ${path}`);
+    }
+    throw err;
+  }
+
+  try {
+    await handle.writeFile(`${JSON.stringify({
+      contract_version: "aionis_runtime_live_sidecar_lock_v1",
+      pid: process.pid,
+      acquired_at: new Date().toISOString(),
+      ...metadata,
+    }, null, 2)}\n`, "utf8");
+  } finally {
+    await handle.close();
+  }
+
+  let released = false;
+  return {
+    path,
+    async release(): Promise<void> {
+      if (released) return;
+      released = true;
+      await rm(path, { force: true });
+    },
+  };
 }
 
 function makeUnchangedNode(input: AionisMemoryNodeInput, existing: AionisMemoryNode | null): AionisMemoryNode {
@@ -344,5 +440,72 @@ export async function runRuntimeLiveSidecarOnce(options: RuntimeLiveSidecarOptio
       fingerprint_counts: fingerprintCounts(nextCheckpoint),
     },
     warnings: [...warnings, ...importSummary.warnings],
+  };
+}
+
+export async function runRuntimeLiveSidecarWatch(options: RuntimeLiveSidecarWatchOptions): Promise<RuntimeLiveSidecarWatchReport> {
+  if (!Number.isInteger(options.iterations) || options.iterations < 1) {
+    throw new Error("Runtime live sidecar watch iterations must be a positive integer");
+  }
+  if (!Number.isInteger(options.intervalMs) || options.intervalMs < 0) {
+    throw new Error("Runtime live sidecar watch intervalMs must be a non-negative integer");
+  }
+
+  const sourcePath = resolve(options.sourcePath);
+  const checkpointPath = resolve(options.checkpointPath);
+  const lockPath = options.lockPath === null ? null : resolve(options.lockPath ?? `${checkpointPath}.lock`);
+  const scope = options.scope?.trim() || null;
+  const runId = randomUUID();
+  const startedAt = new Date().toISOString();
+  const reports: RuntimeLiveSidecarReport[] = [];
+  let lock: RuntimeLiveSidecarLock | null = null;
+  try {
+    if (lockPath) {
+      lock = await acquireLock(lockPath, {
+        run_id: runId,
+        source_path: sourcePath,
+        checkpoint_path: checkpointPath,
+        scope,
+        iterations: options.iterations,
+        interval_ms: options.intervalMs,
+        dry_run: Boolean(options.dryRun),
+      });
+    }
+
+    for (let index = 0; index < options.iterations; index += 1) {
+      reports.push(await runRuntimeLiveSidecarOnce({
+        sourcePath,
+        target: options.target,
+        checkpointPath,
+        scope: scope ?? undefined,
+        limit: options.limit,
+        dryRun: options.dryRun,
+      }));
+      if (index < options.iterations - 1 && options.intervalMs > 0) await sleep(options.intervalMs);
+    }
+  } finally {
+    await lock?.release();
+  }
+
+  const applySummary = reports.reduce(
+    (summary, report) => addApplySummary(summary, report.apply_summary),
+    emptyApplySummary(),
+  );
+  return {
+    contract_version: "aionis_runtime_live_sidecar_watch_report_v1",
+    run_id: runId,
+    started_at: startedAt,
+    finished_at: new Date().toISOString(),
+    source_path: sourcePath,
+    scope,
+    checkpoint_path: checkpointPath,
+    lock_path: lockPath,
+    dry_run: Boolean(options.dryRun),
+    interval_ms: options.intervalMs,
+    iterations_requested: options.iterations,
+    iterations_completed: reports.length,
+    reports,
+    apply_summary: applySummary,
+    warnings: reports.flatMap((report) => report.warnings),
   };
 }

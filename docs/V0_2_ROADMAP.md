@@ -54,7 +54,7 @@ Keep Runtime experiments isolated:
 - dual-write sidecar continues to write into a separate Substrate store;
 - no replacement of Aionis Runtime storage in v0.2.
 
-Initial implementation status: `check:runtime-sidecar` now combines read-only Runtime snapshot parity and same-source reference corpus parity into a single report contract. `live-sidecar` adds a checkpointed external mirror from Runtime Lite SQLite into a separate Substrate target for repeated host-managed sync. Real Runtime dual-write remains an explicit separate gate through `check:runtime-dual-write` because it starts focused Runtime.
+Initial implementation status: `check:runtime-sidecar` now combines read-only Runtime snapshot parity and same-source reference corpus parity into a single report contract. `live-sidecar` adds a checkpointed external mirror from Runtime Lite SQLite into a separate Substrate target for repeated host-managed sync, including bounded watch polling and a checkpoint lock. Real Runtime dual-write remains an explicit separate gate through `check:runtime-dual-write` because it starts focused Runtime.
 
 ### 5. Product CLI and Docs
 
