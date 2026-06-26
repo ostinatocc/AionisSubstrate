@@ -10,12 +10,14 @@ All notable changes to Aionis Substrate are documented here.
 - Scoped audit read APIs for relations, feedback, and decision receipts.
 - SQLite schema migration registry with durable applied-migration records.
 - Durability negative controls for orphan decision receipts, checksum-valid corrupt backups, and post-compaction invalid writes.
+- Runtime sidecar stabilization report that combines read-only snapshot parity and same-source reference corpus parity.
 
 ### Changed
 
 - Documented audit reads as side-effect-free adapter parity surfaces.
 - Documented SQLite migrations as explicit adapter-scoped schema changes.
 - Decision traces now require every decision memory id to reference an existing node in the same scope.
+- Documented Runtime sidecar validation as staged gates, keeping real dual-write explicit and isolated.
 
 ## 0.1.0 - 2026-06-26
 

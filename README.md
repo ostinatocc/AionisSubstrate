@@ -75,6 +75,8 @@ Runtime snapshot import is documented in [docs/RUNTIME_SNAPSHOT_IMPORT.md](docs/
 
 Runtime reference corpus parity is documented in [docs/RUNTIME_REFERENCE_CORPUS.md](docs/RUNTIME_REFERENCE_CORPUS.md).
 
+Runtime sidecar stabilization is documented in [docs/RUNTIME_SIDECAR_STABILIZATION.md](docs/RUNTIME_SIDECAR_STABILIZATION.md).
+
 External admission parity is documented in [docs/EXTERNAL_ADMISSION_PARITY.md](docs/EXTERNAL_ADMISSION_PARITY.md).
 
 Runtime dual-write experimentation is documented in [docs/RUNTIME_DUAL_WRITE_EXPERIMENT.md](docs/RUNTIME_DUAL_WRITE_EXPERIMENT.md).
@@ -153,6 +155,20 @@ npm run check:runtime-reference-corpus -- \
 ```
 
 This scans Runtime `agent_context` / `memory_decision_trace` JSON and only counts a reference when its memory ids overlap a real Runtime SQLite scope. Unmatched demo/export files are reported separately.
+
+Runtime sidecar stabilization report:
+
+```bash
+npm run check:runtime-sidecar -- \
+  --source /path/to/aionis-runtime-lite.sqlite \
+  --scope repo-a \
+  --reference /path/to/runtime-guide-or-measure.json \
+  --source-root /path/to/AionisRuntime-focused/.tmp \
+  --reference-root /path/to/runtime-references \
+  --output reports/runtime-sidecar-manual/summary.json
+```
+
+This combines read-only snapshot parity and same-source reference corpus parity into one sidecar report. It does not start Runtime and does not replace Runtime storage.
 
 External admission parity against focused Runtime:
 

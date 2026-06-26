@@ -54,6 +54,8 @@ Keep Runtime experiments isolated:
 - dual-write sidecar continues to write into a separate Substrate store;
 - no replacement of Aionis Runtime storage in v0.2.
 
+Initial implementation status: `check:runtime-sidecar` now combines read-only Runtime snapshot parity and same-source reference corpus parity into a single report contract. Real Runtime dual-write remains an explicit separate gate through `check:runtime-dual-write` because it starts focused Runtime.
+
 ## Excluded
 
 - Vector search, ANN, embeddings, or semantic recall.

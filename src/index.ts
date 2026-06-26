@@ -44,3 +44,11 @@ export {
   type RuntimeReferenceCorpusUnmatchedReport,
   type RuntimeReferenceScopeCandidate,
 } from "./runtime-reference-corpus.ts";
+export {
+  runRuntimeSidecarCheck,
+  type RuntimeSidecarCheckOptions,
+  type RuntimeSidecarCheckReport,
+  type RuntimeSidecarReferenceCorpusCheckOptions,
+  type RuntimeSidecarSnapshotCheckOptions,
+  type RuntimeSidecarStageSummary,
+} from "./runtime-sidecar-check.ts";
