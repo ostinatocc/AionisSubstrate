@@ -107,7 +107,19 @@ Search is not a vector index and not the full Runtime admission policy. It is a 
 
 This is intentional: exported context must leave a receipt. Callers that need a side-effect-free preview must use `previewContext` instead of weakening `compileContext`.
 
-### 9. Backup and Restore Integrity
+### 9. Audit Read API Parity
+
+Adapters must expose the same scoped audit reads:
+
+- `listRelations(scope, memoryId?)`
+- `listFeedback({ scope, memoryId? })`
+- `listDecisions(scope)`
+
+These APIs must be side-effect-free. They must not append decision events, lifecycle transitions, relation writes, feedback writes, or checkpoints.
+
+When `memoryId` is supplied to `listRelations`, adapters must return relations where that memory is either the source or target. When `memoryId` is supplied to `listFeedback`, adapters must return feedback attached to that memory only.
+
+### 10. Backup and Restore Integrity
 
 Backup export must operate over the append-only event log, not only over derived read-model tables or snapshots.
 
@@ -140,6 +152,7 @@ The test suite currently checks:
 - event-log backups verify checksums and restore to file and SQLite stores;
 - checkpoint compaction preserves governed state and restarts future event sequences after the checkpoint;
 - file and SQLite adapters return identical read-only search results for the same scoped query;
+- file and SQLite adapters return identical scoped audit reads without mutating event logs;
 - Runtime snapshot import opens source SQLite read-only.
 
 ## Non-Goals

@@ -65,6 +65,8 @@ API usage is documented in [docs/API_USAGE.md](docs/API_USAGE.md).
 
 Adapter consistency requirements are documented in [docs/ADAPTER_CONTRACT.md](docs/ADAPTER_CONTRACT.md).
 
+The v0.2 roadmap is documented in [docs/V0_2_ROADMAP.md](docs/V0_2_ROADMAP.md).
+
 Backup and restore are documented in [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md).
 
 Checkpoint compaction is documented in [docs/CHECKPOINT_COMPACTION.md](docs/CHECKPOINT_COMPACTION.md).

@@ -2,6 +2,17 @@
 
 All notable changes to Aionis Substrate are documented here.
 
+## Unreleased
+
+### Added
+
+- v0.2 roadmap that freezes Substrate hardening scope and excludes Runtime policy, vector recall, Agent harnesses, and SaaS concerns.
+- Scoped audit read APIs for relations, feedback, and decision receipts.
+
+### Changed
+
+- Documented audit reads as side-effect-free adapter parity surfaces.
+
 ## 0.1.0 - 2026-06-26
 
 ### Added

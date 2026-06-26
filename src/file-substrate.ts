@@ -81,6 +81,30 @@ function sortNodes(nodes: AionisMemoryNode[]): AionisMemoryNode[] {
   });
 }
 
+function sortRelations(relations: AionisRelation[]): AionisRelation[] {
+  return [...relations].sort((a, b) => {
+    const byTime = a.createdAt.localeCompare(b.createdAt);
+    if (byTime !== 0) return byTime;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+function sortFeedback(feedback: AionisFeedback[]): AionisFeedback[] {
+  return [...feedback].sort((a, b) => {
+    const byTime = a.createdAt.localeCompare(b.createdAt);
+    if (byTime !== 0) return byTime;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+function sortDecisions(decisions: AionisDecisionTrace[]): AionisDecisionTrace[] {
+  return [...decisions].sort((a, b) => {
+    const byTime = a.createdAt.localeCompare(b.createdAt);
+    if (byTime !== 0) return byTime;
+    return a.id.localeCompare(b.id);
+  });
+}
+
 export async function openFileAionisSubstrate(options: FileAionisSubstrateOptions): Promise<AionisSubstrate> {
   const dir = options.dir;
   const now = options.now ?? (() => new Date());
@@ -452,8 +476,26 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
       return searchMemoryNodes(Array.from(state.nodes.values()), input);
     },
 
-    async listRelations(scope: string): Promise<AionisRelation[]> {
-      return Array.from(state.relations.values()).filter((relation) => relation.scope === scope);
+    async listRelations(scope: string, memoryId?: string | null): Promise<AionisRelation[]> {
+      const relations = Array.from(state.relations.values()).filter((relation) => {
+        if (relation.scope !== scope) return false;
+        if (!memoryId) return true;
+        return relation.sourceId === memoryId || relation.targetId === memoryId;
+      });
+      return sortRelations(relations);
+    },
+
+    async listFeedback(input): Promise<AionisFeedback[]> {
+      const feedback = Array.from(state.feedback.values()).filter((item) => {
+        if (item.scope !== input.scope) return false;
+        if (!input.memoryId) return true;
+        return item.memoryId === input.memoryId;
+      });
+      return sortFeedback(feedback);
+    },
+
+    async listDecisions(scope: string): Promise<AionisDecisionTrace[]> {
+      return sortDecisions(Array.from(state.decisions.values()).filter((decision) => decision.scope === scope));
     },
 
     async listEvents(): Promise<AionisEvent[]> {

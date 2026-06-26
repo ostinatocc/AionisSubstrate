@@ -162,6 +162,14 @@ The trace is for audit/debug/measure. It must not mutate admission by itself.
 
 `compileContext` is intentionally not a pure read. It records `memory.decision.recorded` so every exported context has an auditable receipt. Tools that need a side-effect-free view must use `previewContext` instead of treating `compileContext` as read-only.
 
+Decision and evidence records must also be inspectable without creating new events:
+
+- `listRelations(scope, memoryId?)`
+- `listFeedback({ scope, memoryId? })`
+- `listDecisions(scope)`
+
+These read APIs are for audit, debug, and measure surfaces. They do not compile context and do not mutate lifecycle, relation, feedback, decision, or checkpoint state.
+
 ## Adapter Requirements
 
 Every adapter must satisfy the same observable contract:
@@ -172,8 +180,9 @@ Every adapter must satisfy the same observable contract:
 4. Compile the same admission buckets from the same node/relation state.
 5. Return the same scoped search results from the same node state.
 6. Record decision traces as events.
-7. Reopen cleanly and recover the same read model.
-8. If compaction is supported, compact only through a validated checkpoint event.
+7. Return the same scoped audit reads from the same relation, feedback, and decision state.
+8. Reopen cleanly and recover the same read model.
+9. If compaction is supported, compact only through a validated checkpoint event.
 
 Current adapters:
 

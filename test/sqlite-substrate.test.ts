@@ -117,6 +117,61 @@ test("sqlite preview context is read-only while compile context records a decisi
   });
 });
 
+test("sqlite audit read APIs expose scoped records without mutating events", async () => {
+  await withSqlite(async (path) => {
+    const store = await openSqliteAionisSubstrate({ path });
+    await seedGovernedScenario(store);
+    await store.putNode({
+      id: "other-route",
+      scope: "repo-b",
+      kind: "execution",
+      summary: "Other scope route must not leak.",
+      lifecycle: "active",
+      authority: "trusted",
+      confidence: 0.9,
+      targetFiles: ["src/other.ts"],
+    });
+    await store.recordFeedback({
+      id: "fb-current",
+      scope: "repo-a",
+      memoryId: "current-route",
+      outcome: "positive",
+      strength: "strong",
+      runId: "run-1",
+      evidenceRef: "trace://run-1/verifier",
+    });
+    await store.recordFeedback({
+      id: "fb-other",
+      scope: "repo-b",
+      memoryId: "other-route",
+      outcome: "negative",
+      strength: "weak",
+      runId: "run-2",
+      evidenceRef: "trace://run-2/verifier",
+    });
+    await store.compileContext({ scope: "repo-a", query: "continue runtime route" });
+
+    const beforeReads = await store.listEvents();
+    assert.deepEqual((await store.listRelations("repo-a")).map((relation) => relation.id), ["rel-current-supersedes-old"]);
+    assert.deepEqual((await store.listRelations("repo-a", "current-route")).map((relation) => relation.id), ["rel-current-supersedes-old"]);
+    assert.deepEqual((await store.listRelations("repo-a", "old-route")).map((relation) => relation.id), ["rel-current-supersedes-old"]);
+    assert.deepEqual(await store.listRelations("repo-a", "missing-route"), []);
+    assert.deepEqual(await store.listRelations("repo-b"), []);
+
+    assert.deepEqual((await store.listFeedback({ scope: "repo-a" })).map((feedback) => feedback.id), ["fb-current"]);
+    assert.deepEqual((await store.listFeedback({ scope: "repo-a", memoryId: "current-route" })).map((feedback) => feedback.id), ["fb-current"]);
+    assert.deepEqual(await store.listFeedback({ scope: "repo-a", memoryId: "old-route" }), []);
+    assert.deepEqual((await store.listFeedback({ scope: "repo-b" })).map((feedback) => feedback.id), ["fb-other"]);
+
+    const decisions = await store.listDecisions("repo-a");
+    assert.equal(decisions.length, 1);
+    assert.equal(decisions[0]?.query, "continue runtime route");
+    assert.deepEqual(await store.listDecisions("repo-b"), []);
+    assert.equal((await store.listEvents()).length, beforeReads.length);
+    await store.close();
+  });
+});
+
 test("sqlite adapter rejects a store created by a newer schema", async () => {
   await withSqlite(async (path) => {
     let store = await openSqliteAionisSubstrate({ path });

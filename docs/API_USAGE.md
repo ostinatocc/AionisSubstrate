@@ -177,6 +177,31 @@ The compiled context has four surfaces:
 
 `compileContext` records a `memory.decision.recorded` event. It is intentionally auditable, not a pure read.
 
+## Read Audit Records
+
+```ts
+const relations = await store.listRelations("repo-a", "route-current");
+const feedback = await store.listFeedback({
+  scope: "repo-a",
+  memoryId: "route-current",
+});
+const decisions = await store.listDecisions("repo-a");
+
+console.log(relations.map((relation) => relation.kind));
+console.log(feedback.map((item) => item.outcome));
+console.log(decisions.at(-1)?.decisions);
+```
+
+Audit reads are scoped and side-effect-free:
+
+- `listRelations(scope)` returns all relations in a scope.
+- `listRelations(scope, memoryId)` returns relations where the memory is either source or target.
+- `listFeedback({ scope })` returns feedback in a scope.
+- `listFeedback({ scope, memoryId })` returns feedback attached to one memory.
+- `listDecisions(scope)` returns recorded decision receipts for the scope.
+
+These APIs read evidence and receipts. They do not append events, compile prompt surfaces, or decide whether memory can influence the next Agent turn.
+
 ## Compact the Event Log
 
 ```ts

@@ -814,8 +814,51 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
       });
     },
 
-    async listRelations(scope: string): Promise<AionisRelation[]> {
-      return await enqueue(() => (db.prepare("SELECT * FROM memory_relations WHERE scope = ?").all(scope) as SqliteRelationRow[]).map(rowToRelation));
+    async listRelations(scope: string, memoryId?: string | null): Promise<AionisRelation[]> {
+      return await enqueue(() => {
+        if (memoryId) {
+          return (db.prepare(`
+            SELECT *
+            FROM memory_relations
+            WHERE scope = ? AND (source_id = ? OR target_id = ?)
+            ORDER BY created_at ASC, id ASC
+          `).all(scope, memoryId, memoryId) as SqliteRelationRow[]).map(rowToRelation);
+        }
+        return (db.prepare(`
+          SELECT *
+          FROM memory_relations
+          WHERE scope = ?
+          ORDER BY created_at ASC, id ASC
+        `).all(scope) as SqliteRelationRow[]).map(rowToRelation);
+      });
+    },
+
+    async listFeedback(input): Promise<AionisFeedback[]> {
+      return await enqueue(() => {
+        if (input.memoryId) {
+          return (db.prepare(`
+            SELECT *
+            FROM memory_feedback
+            WHERE scope = ? AND memory_id = ?
+            ORDER BY created_at ASC, id ASC
+          `).all(input.scope, input.memoryId) as SqliteFeedbackRow[]).map(rowToFeedback);
+        }
+        return (db.prepare(`
+          SELECT *
+          FROM memory_feedback
+          WHERE scope = ?
+          ORDER BY created_at ASC, id ASC
+        `).all(input.scope) as SqliteFeedbackRow[]).map(rowToFeedback);
+      });
+    },
+
+    async listDecisions(scope: string): Promise<AionisDecisionTrace[]> {
+      return await enqueue(() => (db.prepare(`
+        SELECT *
+        FROM decision_traces
+        WHERE scope = ?
+        ORDER BY created_at ASC, id ASC
+      `).all(scope) as SqliteDecisionRow[]).map(rowToDecision));
     },
 
     async listEvents(): Promise<AionisEvent[]> {

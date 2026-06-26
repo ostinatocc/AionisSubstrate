@@ -148,6 +148,11 @@ export type AionisDecisionTraceInput = {
   createdAt?: string;
 };
 
+export type AionisFeedbackListInput = {
+  scope: string;
+  memoryId?: string | null;
+};
+
 export type AionisCompiledContext = {
   scope: string;
   use_now: AionisMemoryNode[];
@@ -302,7 +307,9 @@ export type AionisSubstrate = {
   getNode(scope: string, id: string): Promise<AionisMemoryNode | null>;
   listNodes(scope: string): Promise<AionisMemoryNode[]>;
   searchNodes(input: AionisMemorySearchInput): Promise<AionisMemorySearchResult[]>;
-  listRelations(scope: string): Promise<AionisRelation[]>;
+  listRelations(scope: string, memoryId?: string | null): Promise<AionisRelation[]>;
+  listFeedback(input: AionisFeedbackListInput): Promise<AionisFeedback[]>;
+  listDecisions(scope: string): Promise<AionisDecisionTrace[]>;
   listEvents(): Promise<AionisEvent[]>;
   close(): Promise<void>;
 };
