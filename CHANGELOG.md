@@ -10,6 +10,7 @@ All notable changes to Aionis Substrate are documented here.
 - Optional candidate index boundary with rebuild, verify, write-through node sync, and candidate-id narrowing before canonical Substrate scoring.
 - Optional Zvec-backed candidate index adapter for local vector preselection while keeping file/SQLite as truth storage.
 - Runtime Zvec candidate-index validation gate that imports real Runtime Lite SQLite scopes into isolated Substrate stores and checks Zvec health plus canonical-search parity.
+- Zvec scale-maintenance gate that writes a SQLite truth store with a Zvec candidate sidecar, verifies write-through health, wide-search parity, narrow seeded recovery, lifecycle-transition sync, compaction, and reopen rebuild.
 
 ## 0.1.4 - 2026-06-26
 

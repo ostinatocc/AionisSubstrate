@@ -284,6 +284,7 @@ export class ZvecCandidateIndex implements AionisCandidateIndex {
   private readonly collectionName: string;
   private readonly vectorField: string;
   private readonly embeddingModel: string;
+  private manifestDirty = false;
 
   constructor(options: ZvecCandidateIndexOptions) {
     this.options = options;
@@ -308,6 +309,16 @@ export class ZvecCandidateIndex implements AionisCandidateIndex {
 
   private async saveManifest(): Promise<void> {
     await writeManifest(this.manifestPath, await this.loadManifest());
+    this.manifestDirty = false;
+  }
+
+  private markManifestDirty(): void {
+    this.manifestDirty = true;
+  }
+
+  private async flushManifest(): Promise<void> {
+    if (!this.manifestDirty) return;
+    await this.saveManifest();
   }
 
   private async collectionForDimension(dimension: number): Promise<ZvecCollection> {
@@ -360,7 +371,7 @@ export class ZvecCandidateIndex implements AionisCandidateIndex {
       embeddingModel,
       fingerprint: nodeFingerprint(node, vector, embeddingModel),
     });
-    await this.saveManifest();
+    this.markManifestDirty();
   }
 
   async deleteNode(scope: string, id: string): Promise<void> {
@@ -372,7 +383,7 @@ export class ZvecCandidateIndex implements AionisCandidateIndex {
         assertStatus(collection.deleteSync(entry.docId), "delete");
         manifest.delete(key);
       }
-      await this.saveManifest();
+      this.markManifestDirty();
       return;
     }
     for (const dimension of this.knownDimensions()) {
@@ -440,6 +451,7 @@ export class ZvecCandidateIndex implements AionisCandidateIndex {
       renameSync(tmpPath, this.path);
       mkdirSync(this.path, { recursive: true });
       this.manifest = new Map(nextManifest);
+      this.manifestDirty = false;
       return await this.verify(nodes);
     } catch (err) {
       await next.close().catch(() => undefined);
@@ -501,6 +513,7 @@ export class ZvecCandidateIndex implements AionisCandidateIndex {
   }
 
   async close(): Promise<void> {
+    await this.flushManifest();
     for (const { collection } of this.collections.values()) collection.closeSync();
     this.collections.clear();
   }

@@ -126,6 +126,8 @@ Runtime live sidecar sync is documented in [docs/RUNTIME_LIVE_SIDECAR.md](docs/R
 
 Runtime Zvec candidate-index validation is documented in [docs/RUNTIME_ZVEC_CANDIDATE_INDEX.md](docs/RUNTIME_ZVEC_CANDIDATE_INDEX.md).
 
+Zvec scale and maintenance validation is documented in [docs/ZVEC_SCALE_MAINTENANCE.md](docs/ZVEC_SCALE_MAINTENANCE.md).
+
 Runtime reference corpus parity is documented in [docs/RUNTIME_REFERENCE_CORPUS.md](docs/RUNTIME_REFERENCE_CORPUS.md).
 
 Runtime sidecar stabilization is documented in [docs/RUNTIME_SIDECAR_STABILIZATION.md](docs/RUNTIME_SIDECAR_STABILIZATION.md).
@@ -382,3 +384,17 @@ npm run check:scale -- \
 ```
 
 The scale smoke writes a temporary SQLite substrate, verifies event sequence continuity, runs scoped search, compiles context, compacts the store, reopens it, and writes a report under `reports/scale-*`.
+
+SQLite + Zvec scale maintenance:
+
+```bash
+npm run check:zvec-scale -- \
+  --nodes 10000 \
+  --scopes 10 \
+  --relations 2000 \
+  --feedback 1000 \
+  --probes 100 \
+  --narrow-candidate-limit 20
+```
+
+This writes a temporary SQLite truth store with a Zvec candidate sidecar, verifies write-through index health, compares wide-window Zvec search against canonical Substrate search, checks narrow-window seeded recovery, transitions lifecycle state, compacts, reopens, and writes a report under `reports/zvec-scale-*`.
