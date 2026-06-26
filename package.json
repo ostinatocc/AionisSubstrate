@@ -35,6 +35,8 @@
     "check:runtime-dual-write": "node scripts/runtime-dual-write-experiment.ts",
     "check:pack": "npm run build && node scripts/verify-package.ts",
     "check:install-smoke": "npm run build && node scripts/install-smoke.ts",
+    "check:registry-install": "node scripts/registry-install-smoke.ts",
+    "check:published-runtime-smoke": "node scripts/published-runtime-smoke.ts",
     "check:scale": "node scripts/scale-test.ts",
     "example:basic": "npm run build && node examples/basic/index.mjs",
     "check:release": "npm run typecheck && npm test && npm run bench:contract && npm run example:basic && npm run check:pack && npm run check:install-smoke"

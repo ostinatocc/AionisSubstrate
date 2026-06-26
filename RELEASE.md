@@ -54,6 +54,25 @@ npm publish --access public
 
 After publish, install the package in a fresh project and run the basic store operations from `examples/basic`.
 
+Run the post-publish registry install smoke:
+
+```bash
+npm run check:registry-install
+```
+
+Run the published-package Runtime snapshot smoke:
+
+```bash
+npm run check:published-runtime-smoke
+```
+
+Both commands install `@aionis/substrate@<package.json version>` from the npm registry into a temporary project. They validate the published package, not local source or a local tarball. To verify another package spec, set:
+
+```bash
+AIONIS_SUBSTRATE_REGISTRY_PACKAGE=@aionis/substrate@0.1.0 npm run check:registry-install
+AIONIS_SUBSTRATE_REGISTRY_PACKAGE=@aionis/substrate@0.1.0 npm run check:published-runtime-smoke
+```
+
 ## Git
 
 Create a release commit and tag:

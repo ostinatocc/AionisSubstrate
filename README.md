@@ -209,6 +209,15 @@ npm run check:release
 
 `check:install-smoke` packs the built package, installs that tarball into a fresh temporary project, imports `@aionis/substrate`, and runs real file/SQLite store operations from the installed package.
 
+After publishing to npm, run the registry package checks:
+
+```bash
+npm run check:registry-install
+npm run check:published-runtime-smoke
+```
+
+These commands install `@aionis/substrate@<package.json version>` from the npm registry into a fresh temporary project. `check:published-runtime-smoke` also creates a Runtime Lite SQLite fixture and verifies published-package snapshot import into a separate Substrate store.
+
 ## Scale Smoke
 
 ```bash
