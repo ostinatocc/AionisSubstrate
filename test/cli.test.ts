@@ -32,6 +32,7 @@ test("published CLI entrypoints expose root and sidecar help", () => {
   });
   assert.match(rootHelp, /Aionis Substrate CLI/);
   assert.match(rootHelp, /aionis-substrate sidecar/);
+  assert.match(rootHelp, /live-sidecar/);
 
   const sidecarHelp = execFileSync("node", ["src/cli.ts", "sidecar", "--help"], {
     encoding: "utf8",
@@ -41,6 +42,13 @@ test("published CLI entrypoints expose root and sidecar help", () => {
   assert.match(sidecarHelp, /--source-root/);
   assert.match(rootHelp, /preview-context/);
   assert.match(rootHelp, /backup/);
+
+  const liveSidecarHelp = execFileSync("node", ["src/cli.ts", "live-sidecar", "--help"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  assert.match(liveSidecarHelp, /Runtime live sidecar/);
+  assert.match(liveSidecarHelp, /--checkpoint/);
 });
 
 test("CLI store commands inspect preview backup restore and compact a real SQLite store", async () => {
@@ -218,5 +226,54 @@ test("CLI imports a Runtime Lite snapshot into a separate Substrate store", asyn
     assert.equal(report.contract_version, "aionis_runtime_lite_snapshot_import_summary_v1");
     assert.equal(report.nodesImported, 1);
     assert.deepEqual(report.scopes, ["repo-a"]);
+  });
+});
+
+test("CLI live-sidecar incrementally mirrors Runtime Lite evidence with a checkpoint", async () => {
+  await withTempDir(async (dir) => {
+    const source = join(dir, "runtime.sqlite");
+    const target = join(dir, "substrate.sqlite");
+    const checkpoint = join(dir, "checkpoint.json");
+    createRuntimeLiteSource(source);
+    const first = runCli([
+      "live-sidecar",
+      "--source",
+      source,
+      "--target",
+      target,
+      "--adapter",
+      "sqlite",
+      "--checkpoint",
+      checkpoint,
+      "--scope",
+      "repo-a",
+    ]) as {
+      contract_version: string;
+      apply_summary: { nodes: { applied: number; unchanged: number } };
+      store_after: { eventCount: number };
+    };
+    assert.equal(first.contract_version, "aionis_runtime_live_sidecar_report_v1");
+    assert.equal(first.apply_summary.nodes.applied, 1);
+    assert.equal(first.apply_summary.nodes.unchanged, 0);
+
+    const second = runCli([
+      "live-sidecar",
+      "--source",
+      source,
+      "--target",
+      target,
+      "--adapter",
+      "sqlite",
+      "--checkpoint",
+      checkpoint,
+      "--scope",
+      "repo-a",
+    ]) as {
+      apply_summary: { nodes: { applied: number; unchanged: number } };
+      store_after: { eventCount: number };
+    };
+    assert.equal(second.apply_summary.nodes.applied, 0);
+    assert.equal(second.apply_summary.nodes.unchanged, 1);
+    assert.equal(second.store_after.eventCount, first.store_after.eventCount);
   });
 });

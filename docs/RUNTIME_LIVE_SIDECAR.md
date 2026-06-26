@@ -1,0 +1,86 @@
+# Runtime Live Sidecar
+
+The Runtime live sidecar is an external, one-way bridge from an Aionis Runtime Lite SQLite database into an independent Aionis Substrate store.
+
+It exists for a narrow productization step:
+
+- Runtime remains the source of execution memory writes.
+- Substrate mirrors Runtime evidence into a durable substrate store.
+- A checkpoint prevents replaying unchanged Runtime rows on every poll.
+- No Runtime table, source file, policy, or guide path is mutated.
+
+This is not a replacement for Runtime policy. It is a sidecar substrate sync primitive.
+
+## Command
+
+```bash
+npx aionis-substrate live-sidecar \
+  --source /path/to/aionis-runtime-lite.sqlite \
+  --target ./substrate.sqlite \
+  --adapter sqlite \
+  --checkpoint ./runtime-live-checkpoint.json \
+  --scope repo-a
+```
+
+Run the command repeatedly from a scheduler or host process. Each run:
+
+1. opens the Runtime SQLite source read-only;
+2. maps Runtime memory nodes, relations, feedback, and decisions through the snapshot importer;
+3. fingerprints each mapped Substrate write;
+4. writes only new or changed evidence into the target store;
+5. atomically updates the checkpoint file.
+
+Use `--adapter file` when the target is a file-backed Substrate directory.
+
+Use `--dry-run` to report what would be applied without writing the target or checkpoint:
+
+```bash
+npx aionis-substrate live-sidecar \
+  --source /path/to/aionis-runtime-lite.sqlite \
+  --target ./substrate.sqlite \
+  --adapter sqlite \
+  --checkpoint ./runtime-live-checkpoint.json \
+  --scope repo-a \
+  --dry-run
+```
+
+## Report
+
+The report contract is `aionis_runtime_live_sidecar_report_v1`.
+
+Important fields:
+
+- `import_summary`: the Runtime snapshot importer coverage for this scan.
+- `apply_summary`: what the live sidecar actually applied or skipped through the checkpoint.
+- `checkpoint_before`: whether a checkpoint existed and how many fingerprints it contained.
+- `checkpoint_after`: fingerprint counts after the run.
+- `store_before` / `store_after`: target store event counters.
+- `warnings`: importer warnings plus sidecar consistency warnings.
+
+`import_summary.nodesImported` can be larger than `apply_summary.nodes.applied`. That is expected: the importer reports what it mapped from Runtime; the live sidecar reports what was new or changed after checkpoint comparison.
+
+## Checkpoint Behavior
+
+The checkpoint is scoped to:
+
+- Runtime source path;
+- optional Runtime scope;
+- mapped Substrate object fingerprints.
+
+If the checkpoint path points to a different Runtime source or scope, the command fails. This prevents accidental cross-source reuse.
+
+If the checkpoint contains fingerprints but the target store is empty, the sidecar ignores the checkpoint and replays the Runtime snapshot into the target. This prevents a stale checkpoint from hiding a lost or newly created target store.
+
+If an individual node, relation, feedback row, or decision is missing from the target even though the checkpoint says it is unchanged, the sidecar re-applies that object.
+
+## Product Boundary
+
+The live sidecar is external infrastructure:
+
+- it does not replace Runtime Lite;
+- it does not install dual-write inside Runtime;
+- it does not change Runtime guide/admission policy;
+- it does not encode benchmark-specific rules;
+- it does not make Substrate the full Runtime policy engine.
+
+Use it when you want a live Substrate mirror for inspection, backup, product experiments, or external host integration without touching Runtime core.

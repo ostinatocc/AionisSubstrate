@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { access, mkdir } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
   exportAionisSubstrateBackup,
@@ -9,6 +9,7 @@ import {
   readAionisSubstrateBackupFile,
   restoreAionisSubstrateBackupToFile,
   restoreAionisSubstrateBackupToSqlite,
+  runRuntimeLiveSidecarOnce,
   runRuntimeSidecarCheck,
   verifyAionisSubstrateBackup,
   writeAionisSubstrateBackupFile,
@@ -52,6 +53,12 @@ type RuntimeImportArgs = {
   limit?: number;
 };
 
+type RuntimeLiveSidecarArgs = RuntimeImportArgs & {
+  checkpoint?: string;
+  dryRun?: boolean;
+  output?: string;
+};
+
 type SidecarArgs = {
   source?: string;
   scope?: string;
@@ -76,6 +83,7 @@ function rootUsage(): string {
     "Usage:",
     "  aionis-substrate sidecar --source <runtime.sqlite> --scope <scope> [--reference <guide.json>]",
     "  aionis-substrate import-runtime-snapshot --source <runtime.sqlite> --target <store> --adapter sqlite",
+    "  aionis-substrate live-sidecar --source <runtime.sqlite> --target <store> --adapter sqlite --checkpoint <checkpoint.json>",
     "  aionis-substrate preview-context --adapter sqlite --path <store> --scope <scope>",
     "  aionis-substrate inspect --adapter sqlite --path <store> [--scope <scope>]",
     "  aionis-substrate backup --adapter sqlite --path <store> --output <backup.json>",
@@ -86,6 +94,7 @@ function rootUsage(): string {
     "Commands:",
     "  sidecar                  Run read-only Runtime sidecar stabilization checks.",
     "  import-runtime-snapshot  Import a Runtime Lite SQLite snapshot into a separate Substrate store.",
+    "  live-sidecar             Incrementally mirror Runtime Lite evidence into a Substrate store.",
     "  inspect                  Inspect store metadata and scoped audit counts.",
     "  preview-context          Compile governed buckets without writing a decision receipt.",
     "  backup                   Export and verify a checksum-covered event backup.",
@@ -123,6 +132,22 @@ function runtimeImportUsage(): string {
     "  aionis-substrate import-runtime-snapshot --source <runtime.sqlite> --target <store> --adapter <sqlite|file> [--scope <scope>] [--limit <n>]",
     "",
     "The Runtime SQLite source is opened read-only. The target is a separate Substrate store.",
+  ].join("\n");
+}
+
+function runtimeLiveSidecarUsage(): string {
+  return [
+    "Aionis Substrate Runtime live sidecar",
+    "",
+    "Usage:",
+    "  aionis-substrate live-sidecar --source <runtime.sqlite> --target <store> --adapter <sqlite|file> --checkpoint <checkpoint.json> [--scope <scope>] [--limit <n>]",
+    "",
+    "The Runtime SQLite source is opened read-only. The sidecar writes only the separate Substrate target",
+    "and an explicit checkpoint file. Run it repeatedly from a scheduler to sync new Runtime evidence.",
+    "",
+    "Options:",
+    "  --dry-run                Report what would be applied without writing target or checkpoint.",
+    "  --output <path>          Also write the JSON report to a file.",
   ].join("\n");
 }
 
@@ -371,6 +396,49 @@ function parseRuntimeImportArgs(argv: string[]): RuntimeImportArgs {
       process.exit(0);
     } else {
       throw new Error(`unknown import-runtime-snapshot argument: ${flag}`);
+    }
+  }
+  return args;
+}
+
+function parseRuntimeLiveSidecarArgs(argv: string[]): RuntimeLiveSidecarArgs {
+  const args: RuntimeLiveSidecarArgs = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    const flag = argv[i];
+    const value = argv[i + 1];
+    if (flag === "--source") {
+      if (!value) throw new Error("--source requires a value");
+      args.source = value;
+      i += 1;
+    } else if (flag === "--target") {
+      if (!value) throw new Error("--target requires a value");
+      args.target = value;
+      i += 1;
+    } else if (flag === "--adapter") {
+      args.adapter = parseAdapter(value);
+      i += 1;
+    } else if (flag === "--checkpoint") {
+      if (!value) throw new Error("--checkpoint requires a value");
+      args.checkpoint = value;
+      i += 1;
+    } else if (flag === "--scope") {
+      if (!value) throw new Error("--scope requires a value");
+      args.scope = value;
+      i += 1;
+    } else if (flag === "--limit") {
+      args.limit = parseInteger(value, "--limit");
+      i += 1;
+    } else if (flag === "--output") {
+      if (!value) throw new Error("--output requires a value");
+      args.output = value;
+      i += 1;
+    } else if (flag === "--dry-run") {
+      args.dryRun = true;
+    } else if (flag === "--help" || flag === "-h") {
+      console.log(runtimeLiveSidecarUsage());
+      process.exit(0);
+    } else {
+      throw new Error(`unknown live-sidecar argument: ${flag}`);
     }
   }
   return args;
@@ -671,6 +739,36 @@ async function runRuntimeImport(argv: string[]): Promise<void> {
   }
 }
 
+async function runRuntimeLiveSidecar(argv: string[]): Promise<void> {
+  const args = parseRuntimeLiveSidecarArgs(argv);
+  if (!args.source) throw new Error("--source is required");
+  if (!args.target) throw new Error("--target is required");
+  if (!args.adapter) throw new Error("--adapter is required");
+  if (!args.checkpoint) throw new Error("--checkpoint is required");
+  const store = await openTargetStore({
+    adapter: args.adapter,
+    path: args.target,
+  });
+  try {
+    const report = await runRuntimeLiveSidecarOnce({
+      sourcePath: resolve(args.source),
+      target: store,
+      checkpointPath: resolve(args.checkpoint),
+      scope: args.scope,
+      limit: args.limit,
+      dryRun: args.dryRun,
+    });
+    if (args.output) {
+      const output = resolve(args.output);
+      await mkdir(dirname(output), { recursive: true });
+      await writeFile(output, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    }
+    console.log(JSON.stringify(report, null, 2));
+  } finally {
+    await store.close();
+  }
+}
+
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const command = argv[0];
   if (!command || command === "help" || command === "--help" || command === "-h") {
@@ -683,6 +781,10 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   }
   if (command === "import-runtime-snapshot") {
     await runRuntimeImport(argv.slice(1));
+    return;
+  }
+  if (command === "live-sidecar") {
+    await runRuntimeLiveSidecar(argv.slice(1));
     return;
   }
   if (command === "inspect") {

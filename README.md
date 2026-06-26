@@ -9,13 +9,13 @@ It is not Aionis Runtime core, not an Agent framework, and not a vector database
 ## Status
 
 - Package: `@aionis/substrate`
-- Version: `0.1.0`
+- Version: `0.1.3`
 - Runtime: Node 24+
 - License: Apache-2.0
 - Current adapters: file store and SQLite
-- Runtime integration status: read-only snapshot import, reference-corpus parity, external admission parity, and isolated dual-write sidecar experiments
+- Runtime integration status: read-only snapshot import, checkpointed live sidecar mirror, reference-corpus parity, external admission parity, and isolated dual-write sidecar experiments
 
-The project is intentionally independent from `AionisRuntime-focused`. It can import real Runtime Lite SQLite snapshots for validation and run isolated sidecar dual-write experiments, but it does not mutate Runtime source code or replace Runtime storage.
+The project is intentionally independent from `AionisRuntime-focused`. It can import real Runtime Lite SQLite snapshots for validation, mirror Runtime evidence into a separate Substrate target through an external checkpointed sidecar, and run isolated sidecar dual-write experiments, but it does not mutate Runtime source code or replace Runtime storage.
 
 ## Install
 
@@ -43,6 +43,7 @@ npx aionis-substrate preview-context --adapter sqlite --path ./substrate.sqlite 
 npx aionis-substrate backup --adapter sqlite --path ./substrate.sqlite --output ./backup.json
 npx aionis-substrate restore --adapter sqlite --path ./restored.sqlite --input ./backup.json
 npx aionis-substrate compact --adapter sqlite --path ./substrate.sqlite
+npx aionis-substrate live-sidecar --source ./runtime.sqlite --target ./substrate.sqlite --adapter sqlite --checkpoint ./runtime-live-checkpoint.json --scope repo-a
 ```
 
 ## Goal
@@ -82,6 +83,7 @@ This first version ships two embedded adapters:
 - checkpoint compaction can rewrite a store event log to one checksum-covered checkpoint event without changing governed state.
 - `searchNodes` provides scoped deterministic lexical/structured search over memory nodes without mutating events or admission state. It is not ANN, vector recall, semantic retrieval, or a Recall Engine.
 - `importRuntimeLiteSnapshot` can import an existing Runtime Lite SQLite database into an isolated Substrate store through a read-only source connection.
+- `runRuntimeLiveSidecarOnce` and `aionis-substrate live-sidecar` incrementally mirror Runtime Lite evidence into a separate Substrate target through a checkpoint file.
 
 This is intentionally small. It proves the substrate contract without changing the existing Aionis Runtime.
 
@@ -102,6 +104,8 @@ Backup and restore are documented in [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTOR
 Checkpoint compaction is documented in [docs/CHECKPOINT_COMPACTION.md](docs/CHECKPOINT_COMPACTION.md).
 
 Runtime snapshot import is documented in [docs/RUNTIME_SNAPSHOT_IMPORT.md](docs/RUNTIME_SNAPSHOT_IMPORT.md).
+
+Runtime live sidecar sync is documented in [docs/RUNTIME_LIVE_SIDECAR.md](docs/RUNTIME_LIVE_SIDECAR.md).
 
 Runtime reference corpus parity is documented in [docs/RUNTIME_REFERENCE_CORPUS.md](docs/RUNTIME_REFERENCE_CORPUS.md).
 
@@ -204,6 +208,19 @@ npm run check:runtime-corpus -- \
 ```
 
 This scans Runtime Lite SQLite files read-only, imports selected scopes into temporary Substrate stores, and writes an aggregate matrix report under `reports/runtime-snapshot-corpus-*`. The report includes bucket totals, node/relation/feedback/decision coverage, source-table presence, skip reasons, and Runtime JSON issues.
+
+Runtime live sidecar mirror:
+
+```bash
+npx aionis-substrate live-sidecar \
+  --source /path/to/aionis-runtime-lite.sqlite \
+  --target /tmp/aionis-substrate.sqlite \
+  --adapter sqlite \
+  --checkpoint /tmp/aionis-runtime-live-checkpoint.json \
+  --scope repo-a
+```
+
+This opens Runtime SQLite read-only, writes only new or changed mapped evidence into the separate Substrate target, and atomically updates a checkpoint file. Re-running the command should report unchanged evidence instead of replaying the same rows.
 
 Runtime reference corpus parity:
 

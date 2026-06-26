@@ -54,7 +54,7 @@ Keep Runtime experiments isolated:
 - dual-write sidecar continues to write into a separate Substrate store;
 - no replacement of Aionis Runtime storage in v0.2.
 
-Initial implementation status: `check:runtime-sidecar` now combines read-only Runtime snapshot parity and same-source reference corpus parity into a single report contract. Real Runtime dual-write remains an explicit separate gate through `check:runtime-dual-write` because it starts focused Runtime.
+Initial implementation status: `check:runtime-sidecar` now combines read-only Runtime snapshot parity and same-source reference corpus parity into a single report contract. `live-sidecar` adds a checkpointed external mirror from Runtime Lite SQLite into a separate Substrate target for repeated host-managed sync. Real Runtime dual-write remains an explicit separate gate through `check:runtime-dual-write` because it starts focused Runtime.
 
 ### 5. Product CLI and Docs
 
@@ -64,7 +64,7 @@ Make the substrate boundary easier to consume without widening policy scope:
 - document install, minimal API usage, and sidecar reports separately;
 - keep repository-only Runtime process experiments explicit and separate.
 
-Initial implementation status: the package exposes `aionis-substrate sidecar` for read-only snapshot/reference checks and store commands for inspect, preview-context, backup, restore, compact, and Runtime snapshot import. These commands do not start Runtime, mutate Runtime storage, or implement Runtime admission policy.
+Initial implementation status: the package exposes `aionis-substrate sidecar` for read-only snapshot/reference checks, `aionis-substrate live-sidecar` for checkpointed external mirroring, and store commands for inspect, preview-context, backup, restore, compact, and Runtime snapshot import. These commands do not start Runtime, mutate Runtime storage, or implement Runtime admission policy.
 
 ## Excluded
 

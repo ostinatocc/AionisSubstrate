@@ -6,6 +6,7 @@ It is intentionally narrow:
 
 - it inspects, previews, backs up, restores, and compacts Substrate stores;
 - it imports Runtime Lite SQLite snapshots into separate Substrate stores;
+- it incrementally mirrors Runtime Lite evidence into separate Substrate stores with an explicit checkpoint;
 - it runs read-only checks over existing Runtime evidence;
 - it writes reports to local files;
 - it does not start Aionis Runtime unless you explicitly use the separate repository script `check:runtime-dual-write`;
@@ -123,6 +124,38 @@ The JSON output includes imported/skipped counts plus structured `diagnostics.so
 `diagnostics.skipReasons`, and `diagnostics.jsonIssues` so bridge failures can be classified
 without scraping warning strings.
 
+## Runtime Live Sidecar
+
+Use `live-sidecar` to keep a separate Substrate store in sync with Runtime Lite evidence without replaying unchanged rows:
+
+```bash
+npx aionis-substrate live-sidecar \
+  --source /path/to/aionis-runtime-lite.sqlite \
+  --target ./substrate.sqlite \
+  --adapter sqlite \
+  --checkpoint ./runtime-live-checkpoint.json \
+  --scope repo-a
+```
+
+The Runtime source is opened read-only. The target is a Substrate store owned by this command.
+The checkpoint file records stable fingerprints for mapped Runtime nodes, relations, feedback,
+and decisions. Re-running the command applies only new or changed evidence.
+
+Use `--dry-run` to inspect the apply plan without writing the target or checkpoint:
+
+```bash
+npx aionis-substrate live-sidecar \
+  --source /path/to/aionis-runtime-lite.sqlite \
+  --target ./substrate.sqlite \
+  --adapter sqlite \
+  --checkpoint ./runtime-live-checkpoint.json \
+  --scope repo-a \
+  --dry-run
+```
+
+The report contract is `aionis_runtime_live_sidecar_report_v1`. Read `import_summary` as source coverage
+and `apply_summary` as the checkpointed sidecar result.
+
 ## Sidecar Check
 
 Use `sidecar` when you already have Runtime Lite SQLite evidence and want to check whether Substrate can mirror the governed context surface from outside the Runtime boundary.
@@ -180,6 +213,10 @@ The reference files were scanned, but none of their memory ids overlap the disco
 `snapshot_parity failed`
 
 The imported Substrate buckets do not match the supplied Runtime guide/measure surface. Inspect the generated `summary.json` before changing code; the mismatch may be a scope, reference, or fixture problem.
+
+`checkpoint ignored because target store is empty`
+
+The live sidecar found an existing checkpoint, but the target store had no events. It replayed the Runtime snapshot into the target so the checkpoint cannot hide a missing or newly created target.
 
 `ExperimentalWarning: SQLite is an experimental feature`
 

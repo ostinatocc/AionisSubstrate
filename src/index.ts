@@ -52,3 +52,10 @@ export {
   type RuntimeSidecarSnapshotCheckOptions,
   type RuntimeSidecarStageSummary,
 } from "./runtime-sidecar-check.ts";
+export {
+  runRuntimeLiveSidecarOnce,
+  type RuntimeLiveSidecarApplyStats,
+  type RuntimeLiveSidecarCheckpoint,
+  type RuntimeLiveSidecarOptions,
+  type RuntimeLiveSidecarReport,
+} from "./runtime-live-sidecar.ts";
