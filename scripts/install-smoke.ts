@@ -30,6 +30,13 @@ async function main(): Promise<void> {
       stdio: "pipe",
     });
 
+    const cliHelp = execFileSync(join(workspace, "node_modules", ".bin", "aionis-substrate"), ["--help"], {
+      cwd: workspace,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (!cliHelp.includes("Aionis Substrate CLI")) throw new Error("installed CLI help did not run");
+
     await writeFile(join(workspace, "smoke.mjs"), `
       import assert from "node:assert/strict";
       import {

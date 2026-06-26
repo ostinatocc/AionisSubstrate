@@ -1,10 +1,13 @@
 {
   "name": "@aionis/substrate",
   "version": "0.1.0",
-  "description": "Aionis-native memory and execution-state substrate experiment.",
+  "description": "Durable governed memory substrate for Aionis execution state.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "aionis-substrate": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

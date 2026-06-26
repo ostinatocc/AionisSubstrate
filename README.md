@@ -17,6 +17,24 @@ It is not Aionis Runtime core, not an Agent framework, and not a vector database
 
 The project is intentionally independent from `AionisRuntime-focused`. It can import real Runtime Lite SQLite snapshots for validation and run isolated sidecar dual-write experiments, but it does not mutate Runtime source code or replace Runtime storage.
 
+## Install
+
+```bash
+npm install @aionis/substrate
+```
+
+Run the published CLI without adding a dependency:
+
+```bash
+npx @aionis/substrate --help
+```
+
+After installing into a project:
+
+```bash
+npx aionis-substrate --help
+```
+
 ## Goal
 
 Define the storage semantics Aionis needs before choosing or building a storage engine:
@@ -63,6 +81,8 @@ See [docs/STORE_CONTRACT.md](docs/STORE_CONTRACT.md).
 
 API usage is documented in [docs/API_USAGE.md](docs/API_USAGE.md).
 
+CLI usage is documented in [docs/CLI.md](docs/CLI.md).
+
 Adapter consistency requirements are documented in [docs/ADAPTER_CONTRACT.md](docs/ADAPTER_CONTRACT.md).
 
 The v0.2 roadmap is documented in [docs/V0_2_ROADMAP.md](docs/V0_2_ROADMAP.md).
@@ -98,6 +118,39 @@ npm run example:basic
 ```
 
 Node 24+ is required because the project runs TypeScript directly.
+
+## Minimal API Loop
+
+```ts
+import { openSqliteAionisSubstrate } from "@aionis/substrate";
+
+const store = await openSqliteAionisSubstrate({
+  path: "./aionis-substrate.sqlite",
+});
+
+await store.putNode({
+  id: "current-route",
+  scope: "repo-a",
+  kind: "procedure",
+  summary: "Use src/runtime.ts after verifier passed.",
+  lifecycle: "active",
+  authority: "trusted",
+  confidence: 0.95,
+  targetFiles: ["src/runtime.ts"],
+});
+
+const context = await store.compileContext({
+  scope: "repo-a",
+  query: "continue the runtime implementation",
+});
+
+console.log(context.use_now.map((node) => node.id));
+console.log(context.decision_trace);
+
+await store.close();
+```
+
+Use `previewContext` when you need the same governed buckets without writing a decision receipt.
 
 ## Contract Benchmark
 

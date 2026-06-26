@@ -11,6 +11,8 @@ All notable changes to Aionis Substrate are documented here.
 - SQLite schema migration registry with durable applied-migration records.
 - Durability negative controls for orphan decision receipts, checksum-valid corrupt backups, and post-compaction invalid writes.
 - Runtime sidecar stabilization report that combines read-only snapshot parity and same-source reference corpus parity.
+- Published package CLI `aionis-substrate` with a `sidecar` command for read-only Runtime sidecar stabilization checks.
+- CLI documentation covering install, sidecar reports, and common failure interpretation.
 
 ### Changed
 
@@ -18,6 +20,7 @@ All notable changes to Aionis Substrate are documented here.
 - Documented SQLite migrations as explicit adapter-scoped schema changes.
 - Decision traces now require every decision memory id to reference an existing node in the same scope.
 - Documented Runtime sidecar validation as staged gates, keeping real dual-write explicit and isolated.
+- README now separates package install, minimal API usage, and Runtime sidecar validation paths.
 
 ## 0.1.0 - 2026-06-26
 
