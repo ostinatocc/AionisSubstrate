@@ -101,6 +101,21 @@ It must:
 
 Search is not admission. It may find candidate evidence, but it must not decide whether memory can influence the next Agent turn. Governed prompt surfaces are produced by `compileContext`.
 
+### Candidate Index Contract
+
+Stores may be opened with an optional candidate index.
+
+The index contract is:
+
+- source of truth stays in the file or SQLite substrate store;
+- open rebuilds the index from durable nodes unless explicitly disabled;
+- node upserts and lifecycle transitions write through to the index after the truth store mutation succeeds;
+- `verify(nodes)` reports missing, orphan, and stale index entries;
+- indexed search may narrow candidate ids, but returned results are still canonical substrate nodes with substrate scoring and reason codes;
+- index lookup must not append events, mutate lifecycle state, or produce admission decisions.
+
+This boundary makes a Zvec or ANN-backed adapter possible later without turning the index into the memory database or the admission policy.
+
 ### Relation Graph
 
 Relations connect memory evidence:

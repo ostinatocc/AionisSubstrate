@@ -35,6 +35,19 @@ npm run check:scale -- \
   --feedback 1000
 ```
 
+Run the Runtime product bridge gate when a focused Runtime checkout is
+available:
+
+```bash
+npm run check:runtime-product-bridge -- \
+  --runtime-root /path/to/AionisRuntime-focused
+```
+
+This gate starts focused Runtime with isolated Lite SQLite paths and validates
+external Substrate dual-write, reopen parity, chain probes, read-only
+`live-sidecar` mirroring, checkpoint idempotency, and mirrored context parity.
+It writes `product-bridge-gate-summary.json` and exits non-zero on failure.
+
 Run the basic package example:
 
 ```bash

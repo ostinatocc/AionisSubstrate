@@ -7,6 +7,7 @@ All notable changes to Aionis Substrate are documented here.
 ### Added
 
 - Live sidecar integration example that builds a real Runtime Lite SQLite source, mirrors it through the checkpointed sidecar, and previews governed context buckets.
+- Optional candidate index boundary with rebuild, verify, write-through node sync, and candidate-id narrowing before canonical Substrate scoring.
 
 ## 0.1.4 - 2026-06-26
 

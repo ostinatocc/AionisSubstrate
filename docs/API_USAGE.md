@@ -137,6 +137,40 @@ It supports structured filters for kind, lifecycle, authority, target files, own
 
 It is not vector search, semantic adjudication, or admission policy. Use `compileContext` when the Agent needs governed prompt surfaces.
 
+## Optional Candidate Index
+
+Use a candidate index when the store needs a database-like lookup boundary before final Substrate scoring:
+
+```ts
+import { createMemoryCandidateIndex, openSqliteAionisSubstrate } from "@aionis/substrate";
+
+const candidateIndex = createMemoryCandidateIndex();
+const store = await openSqliteAionisSubstrate({
+  path: "./substrate.sqlite",
+  candidateIndex,
+});
+
+await store.putNode({
+  id: "route-current",
+  scope: "repo-a",
+  kind: "procedure",
+  summary: "Use src/runtime.ts after verifier passed.",
+  lifecycle: "active",
+  authority: "trusted",
+  confidence: 0.95,
+  targetFiles: ["src/runtime.ts"],
+});
+
+const health = await candidateIndex.verify(await store.listNodes("repo-a"));
+const results = await store.searchNodes({
+  scope: "repo-a",
+  query: "runtime verifier",
+  limit: 10,
+});
+```
+
+The index is optional. When configured, it receives write-through node updates and is rebuilt on open unless `rebuildCandidateIndexOnOpen: false` is set. Search still reloads canonical nodes from the store and applies Substrate scoring/filtering; the index only supplies candidate ids.
+
 ## Preview Context
 
 ```ts

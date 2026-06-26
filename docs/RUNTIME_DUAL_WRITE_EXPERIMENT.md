@@ -39,6 +39,20 @@ The compared surfaces are:
 
 ## Command
 
+Product bridge gate:
+
+```bash
+npm run check:runtime-product-bridge -- \
+  --runtime-root /Volumes/ziel/AionisRuntime-focused
+```
+
+This is the full validation path for a product bridge: real focused Runtime
+calls, external Substrate dual-write parity, reopen parity, chain probes,
+read-only `live-sidecar` mirroring, repeated sidecar idempotency, and mirrored
+`previewContext` parity.
+
+Lower-level dual-write experiment:
+
 ```bash
 npm run check:runtime-dual-write -- \
   --runtime-root /Volumes/ziel/AionisRuntime-focused \

@@ -11,6 +11,7 @@ import {
   type AionisReplayState,
 } from "./event-log.ts";
 import { searchMemoryNodes } from "./search.ts";
+import type { AionisCandidateIndex } from "./candidate-index.ts";
 import type {
   AionisAdmissionAction,
   AionisAdmissionDecision,
@@ -32,6 +33,8 @@ import { AIONIS_SUBSTRATE_SCHEMA_VERSION as CURRENT_SCHEMA_VERSION } from "./typ
 export type FileAionisSubstrateOptions = {
   dir: string;
   now?: () => Date;
+  candidateIndex?: AionisCandidateIndex | null;
+  rebuildCandidateIndexOnOpen?: boolean;
 };
 
 function requireNonEmpty(value: string, label: string): string {
@@ -108,6 +111,7 @@ function sortDecisions(decisions: AionisDecisionTrace[]): AionisDecisionTrace[] 
 export async function openFileAionisSubstrate(options: FileAionisSubstrateOptions): Promise<AionisSubstrate> {
   const dir = options.dir;
   const now = options.now ?? (() => new Date());
+  const candidateIndex = options.candidateIndex ?? null;
   const eventsPath = join(dir, "events.jsonl");
   const snapshotPath = join(dir, "snapshot.json");
   const state = emptyReplayState();
@@ -174,6 +178,34 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
 
   function nodeRelations(scope: string, nodeId: string): AionisRelation[] {
     return Array.from(state.relations.values()).filter((relation) => relation.scope === scope && relation.targetId === nodeId);
+  }
+
+  async function syncCandidateIndexNode(node: AionisMemoryNode): Promise<void> {
+    if (!candidateIndex) return;
+    await candidateIndex.upsertNode(node);
+  }
+
+  async function searchWithCandidateIndex(input: Parameters<typeof searchMemoryNodes>[1]) {
+    if (!candidateIndex) return searchMemoryNodes(Array.from(state.nodes.values()), input);
+    const indexLimit = Math.max(input.limit ?? 50, 200);
+    const candidates = await candidateIndex.search({ ...input, limit: indexLimit });
+    const candidateKeys = new Set(candidates.map((candidate) => eventKey(candidate.scope, candidate.memoryId)));
+    const candidateReasons = new Map(candidates.map((candidate) => [
+      eventKey(candidate.scope, candidate.memoryId),
+      candidate.reasons,
+    ]));
+    const nodes = Array.from(state.nodes.values()).filter((node) => candidateKeys.has(eventKey(node.scope, node.id)));
+    return searchMemoryNodes(nodes, input).map((result) => ({
+      ...result,
+      reasons: [
+        {
+          code: "candidate_index_match",
+          detail: "node was selected by the configured candidate index before substrate scoring",
+        },
+        ...(candidateReasons.get(eventKey(result.node.scope, result.node.id)) ?? []),
+        ...result.reasons,
+      ],
+    }));
   }
 
   function reasonsFor(node: AionisMemoryNode): { action: AionisAdmissionAction; reasons: AionisDecisionReason[] } {
@@ -265,6 +297,10 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
       rehydrate: buckets.rehydrate,
       decision_trace: trace,
     };
+  }
+
+  if (candidateIndex && options.rebuildCandidateIndexOnOpen !== false) {
+    await candidateIndex.rebuild(Array.from(state.nodes.values()));
   }
 
   return {
@@ -366,6 +402,7 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
         createdAt: ts,
         payload: node,
       });
+      await syncCandidateIndexNode(node);
       return node;
     },
 
@@ -386,6 +423,7 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
       });
       const node = state.nodes.get(eventKey(input.scope, input.memoryId));
       if (!node) throw new Error(`missing memory node after lifecycle transition: ${input.memoryId}`);
+      await syncCandidateIndexNode(node);
       return node;
     },
 
@@ -473,7 +511,7 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
     },
 
     async searchNodes(input) {
-      return searchMemoryNodes(Array.from(state.nodes.values()), input);
+      return await searchWithCandidateIndex(input);
     },
 
     async listRelations(scope: string, memoryId?: string | null): Promise<AionisRelation[]> {
@@ -504,6 +542,7 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
 
     async close(): Promise<void> {
       await tail.catch(() => undefined);
+      await candidateIndex?.close?.();
     },
   };
 }

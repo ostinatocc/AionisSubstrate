@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { applyAionisEvent, checksumAionisEvents, emptyReplayState } from "./event-log.ts";
 import { searchMemoryNodes } from "./search.ts";
+import type { AionisCandidateIndex } from "./candidate-index.ts";
 import { AIONIS_SUBSTRATE_SCHEMA_VERSION as CURRENT_SCHEMA_VERSION } from "./types.ts";
 import type {
   AionisAdmissionAction,
@@ -25,6 +26,8 @@ import type {
 export type SqliteAionisSubstrateOptions = {
   path: string;
   now?: () => Date;
+  candidateIndex?: AionisCandidateIndex | null;
+  rebuildCandidateIndexOnOpen?: boolean;
 };
 
 type SqliteMemoryNodeRow = {
@@ -475,6 +478,7 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
   await mkdir(dirname(options.path), { recursive: true });
   const db = new DatabaseSync(options.path);
   const now = options.now ?? (() => new Date());
+  const candidateIndex = options.candidateIndex ?? null;
   let tail: Promise<unknown> = Promise.resolve();
   migrateSchema(db, now().toISOString());
 
@@ -693,6 +697,47 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
     };
   }
 
+  async function syncCandidateIndexNode(node: AionisMemoryNode): Promise<void> {
+    if (!candidateIndex) return;
+    await candidateIndex.upsertNode(node);
+  }
+
+  async function searchWithCandidateIndex(input: Parameters<typeof searchMemoryNodes>[1]) {
+    if (!candidateIndex) {
+      return await enqueue(() => {
+        const nodes = (db.prepare("SELECT * FROM memory_nodes WHERE scope = ?").all(input.scope) as SqliteMemoryNodeRow[]).map(rowToNode);
+        return searchMemoryNodes(nodes, input);
+      });
+    }
+    const indexLimit = Math.max(input.limit ?? 50, 200);
+    const candidates = await candidateIndex.search({ ...input, limit: indexLimit });
+    const candidateKeys = new Set(candidates.map((candidate) => `${candidate.scope}\u0000${candidate.memoryId}`));
+    const candidateReasons = new Map(candidates.map((candidate) => [
+      `${candidate.scope}\u0000${candidate.memoryId}`,
+      candidate.reasons,
+    ]));
+    return await enqueue(() => {
+      const nodes = (db.prepare("SELECT * FROM memory_nodes WHERE scope = ?").all(input.scope) as SqliteMemoryNodeRow[])
+        .map(rowToNode)
+        .filter((node) => candidateKeys.has(`${node.scope}\u0000${node.id}`));
+      return searchMemoryNodes(nodes, input).map((result) => ({
+        ...result,
+        reasons: [
+          {
+            code: "candidate_index_match",
+            detail: "node was selected by the configured candidate index before substrate scoring",
+          },
+          ...(candidateReasons.get(`${result.node.scope}\u0000${result.node.id}`) ?? []),
+          ...result.reasons,
+        ],
+      }));
+    });
+  }
+
+  if (candidateIndex && options.rebuildCandidateIndexOnOpen !== false) {
+    await candidateIndex.rebuild(listAllNodesSync());
+  }
+
   return {
     async getStoreInfo() {
       return await enqueue(() => {
@@ -778,7 +823,7 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
     },
 
     async putNode(input: AionisMemoryNodeInput): Promise<AionisMemoryNode> {
-      return await enqueue(() => transaction(() => {
+      const node = await enqueue(() => transaction(() => {
         const ts = isoNow();
         const id = requireNonEmpty(input.id ?? randomUUID(), "memory id");
         const existing = getNodeSync(input.scope, id);
@@ -805,10 +850,12 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
         insertNodeRow(node);
         return node;
       }));
+      await syncCandidateIndexNode(node);
+      return node;
     },
 
     async transitionLifecycle(input): Promise<AionisMemoryNode> {
-      return await enqueue(() => transaction(() => {
+      const node = await enqueue(() => transaction(() => {
         const ts = isoNow();
         const current = getNodeSync(input.scope, input.memoryId);
         if (!current) throw new Error(`cannot transition missing memory node: ${input.memoryId}`);
@@ -834,6 +881,8 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
         insertNodeRow(node);
         return node;
       }));
+      await syncCandidateIndexNode(node);
+      return node;
     },
 
     async putRelation(input: AionisRelationInput): Promise<AionisRelation> {
@@ -921,10 +970,7 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
     },
 
     async searchNodes(input) {
-      return await enqueue(() => {
-        const nodes = (db.prepare("SELECT * FROM memory_nodes WHERE scope = ?").all(input.scope) as SqliteMemoryNodeRow[]).map(rowToNode);
-        return searchMemoryNodes(nodes, input);
-      });
+      return await searchWithCandidateIndex(input);
     },
 
     async listRelations(scope: string, memoryId?: string | null): Promise<AionisRelation[]> {
@@ -980,6 +1026,7 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
 
     async close(): Promise<void> {
       await tail.catch(() => undefined);
+      await candidateIndex?.close?.();
       db.close();
     },
   };

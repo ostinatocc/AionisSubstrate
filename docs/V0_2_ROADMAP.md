@@ -66,9 +66,20 @@ Make the substrate boundary easier to consume without widening policy scope:
 
 Initial implementation status: the package exposes `aionis-substrate sidecar` for read-only snapshot/reference checks, `aionis-substrate live-sidecar` for checkpointed external mirroring, and store commands for inspect, preview-context, backup, restore, compact, and Runtime snapshot import. These commands do not start Runtime, mutate Runtime storage, or implement Runtime admission policy.
 
+### 6. Candidate Index Boundary
+
+Add an optional index boundary for database-style candidate lookup:
+
+- index adapters receive write-through node updates;
+- open can rebuild the index from durable nodes;
+- `verify(nodes)` reports missing, orphan, and stale entries;
+- final search results still come from canonical Substrate nodes.
+
+Initial implementation status: `createMemoryCandidateIndex` provides a deterministic in-process candidate index with rebuild, verify, upsert, delete, and search. File and SQLite adapters can use it to narrow candidates before applying the existing Substrate search contract. A future Zvec-backed adapter can implement the same interface without changing truth storage or admission policy.
+
 ## Excluded
 
-- Vector search, ANN, embeddings, or semantic recall.
+- Built-in vector embeddings, hosted ANN services, or semantic recall policy.
 - Full Aionis Runtime admission policy.
 - LLM-as-judge or model-generated lifecycle policy.
 - Agent orchestration or external Agent harnesses.

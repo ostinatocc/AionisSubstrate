@@ -1,4 +1,10 @@
 export * from "./types.ts";
+export {
+  createMemoryCandidateIndex,
+  type AionisCandidateIndex,
+  type AionisCandidateIndexHealthReport,
+  type AionisCandidateIndexSearchResult,
+} from "./candidate-index.ts";
 export { openFileAionisSubstrate, type FileAionisSubstrateOptions } from "./file-substrate.ts";
 export { openSqliteAionisSubstrate, type SqliteAionisSubstrateOptions } from "./sqlite-substrate.ts";
 export {

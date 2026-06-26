@@ -9,7 +9,8 @@ It is intentionally narrow:
 - it incrementally mirrors Runtime Lite evidence into separate Substrate stores with an explicit checkpoint;
 - it runs read-only checks over existing Runtime evidence;
 - it writes reports to local files;
-- it does not start Aionis Runtime unless you explicitly use the separate repository script `check:runtime-dual-write`;
+- it does not start Aionis Runtime unless you explicitly use a repository validation script such as
+  `check:runtime-dual-write` or `check:runtime-product-bridge`;
 - it does not mutate Runtime source code or replace Runtime storage.
 
 ## Install
@@ -213,6 +214,25 @@ npx aionis-substrate sidecar \
 ```
 
 The report contract is `aionis_runtime_sidecar_check_report_v1`.
+
+## Runtime Product Bridge Gate
+
+The package CLI is for store operations and sidecar sync. In this repository,
+use `check:runtime-product-bridge` when you need the full product bridge gate
+against a focused Runtime checkout:
+
+```bash
+npm run check:runtime-product-bridge -- \
+  --runtime-root /path/to/AionisRuntime-focused
+```
+
+The gate starts focused Runtime with isolated Lite SQLite paths, runs real
+`observe -> guide -> feedback -> measure`, writes the same observed evidence
+into an external Substrate store, verifies reopen parity, runs chain probes,
+mirrors Runtime Lite SQLite through read-only `live-sidecar`, verifies
+checkpoint idempotency, and compares mirrored Substrate `previewContext` buckets
+against Runtime guide surfaces. The top-level report is
+`product-bridge-gate-summary.json`.
 
 ## What Passing Means
 

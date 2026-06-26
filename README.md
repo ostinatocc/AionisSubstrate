@@ -101,6 +101,7 @@ This first version ships two embedded adapters:
 - event-log backups can be exported, checksum-verified, and restored to either file or SQLite stores.
 - checkpoint compaction can rewrite a store event log to one checksum-covered checkpoint event without changing governed state.
 - `searchNodes` provides scoped deterministic lexical/structured search over memory nodes without mutating events or admission state. It is not ANN, vector recall, semantic retrieval, or a Recall Engine.
+- stores can be opened with an optional candidate index. The index is rebuilt on open by default, receives write-through node updates, can be verified for missing/orphan/stale entries, and only narrows candidate ids before Substrate reloads truth nodes and scores them.
 - `importRuntimeLiteSnapshot` can import an existing Runtime Lite SQLite database into an isolated Substrate store through a read-only source connection.
 - `runRuntimeLiveSidecarOnce`, `runRuntimeLiveSidecarWatch`, and `aionis-substrate live-sidecar` incrementally mirror Runtime Lite evidence into a separate Substrate target through a checkpoint file.
 
@@ -155,10 +156,11 @@ Node 24+ is required because the project runs TypeScript directly.
 ## Minimal API Loop
 
 ```ts
-import { openSqliteAionisSubstrate } from "@aionis/substrate";
+import { createMemoryCandidateIndex, openSqliteAionisSubstrate } from "@aionis/substrate";
 
 const store = await openSqliteAionisSubstrate({
   path: "./aionis-substrate.sqlite",
+  candidateIndex: createMemoryCandidateIndex(),
 });
 
 await store.putNode({
@@ -303,6 +305,23 @@ npm run check:runtime-dual-write -- \
 ```
 
 The soak report includes per-scenario latency summaries, chain-probe latency, reopen latency, event-sequence continuity, and SQLite file sizes.
+
+Runtime product bridge gate:
+
+```bash
+npm run check:runtime-product-bridge -- \
+  --runtime-root /path/to/AionisRuntime-focused
+```
+
+This is the product-level bridge check. It runs real focused Runtime
+`observe -> guide -> feedback -> measure`, verifies external Substrate
+dual-write parity, closes and reopens the Substrate store, runs lifecycle/relation
+chain probes, mirrors the Runtime Lite SQLite source through read-only
+`live-sidecar`, re-runs `live-sidecar` to prove checkpoint idempotency, and then
+compares the mirrored Substrate `previewContext` buckets back against Runtime
+guide surfaces. The default gate runs 4 fixed scenarios, 96 deterministic
+generated scenarios, and 16 chain probes. It writes a single
+`product-bridge-gate-summary.json` report and exits non-zero if any stage fails.
 
 ## Development Checks
 

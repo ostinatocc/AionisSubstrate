@@ -102,6 +102,15 @@ Search is read-only. It must not append `memory.decision.recorded`, lifecycle ev
 
 Search is not a vector index and not the full Runtime admission policy. It is a deterministic substrate query for locating candidate memory nodes before higher-level governance decides whether they can affect an Agent turn.
 
+When a candidate index is configured, both adapters must preserve the same final `searchNodes` ids, scores, and reason-code semantics. The index is allowed to preselect candidate ids, but the adapter must reload canonical nodes from the truth store before returning results.
+
+Candidate index synchronization requirements:
+
+- open-time rebuild is enabled by default;
+- `putNode` write-through updates the index after the durable node mutation succeeds;
+- `transitionLifecycle` write-through updates the index after the durable lifecycle mutation succeeds;
+- `verify(nodes)` must expose missing, orphan, and stale entries so operators can rebuild instead of trusting silent drift.
+
 ### 8. Context Preview and Decision Receipt Side Effect
 
 `previewContext` returns the same governed buckets and decision-reason shape as `compileContext`, but it is read-only. It must not append `memory.decision.recorded`, lifecycle events, relation events, feedback events, or any other event.
@@ -167,7 +176,7 @@ The test suite currently checks:
 The adapter contract does not define:
 
 - vector similarity search;
-- embedding storage/indexing;
+- embedding model management;
 - full Aionis Runtime admission policy;
 - SaaS tenancy;
 - external Agent orchestration.
