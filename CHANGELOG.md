@@ -4,6 +4,8 @@ All notable changes to Aionis Substrate are documented here.
 
 ## Unreleased
 
+## 0.1.2 - 2026-06-26
+
 ### Added
 
 - CLI commands for `inspect`, `preview-context`, `backup`, `restore`, `compact`, and `import-runtime-snapshot`.
