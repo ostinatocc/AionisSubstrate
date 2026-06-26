@@ -182,6 +182,15 @@ The soak report includes per-scenario latency summaries, chain-probe latency, re
 npm run typecheck
 npm test
 npm run bench:contract
+npm run check:pack
 ```
 
 The CI workflow runs the same checks on every push and pull request.
+
+For a full local release gate:
+
+```bash
+npm run check:release
+```
+
+`check:pack` runs `npm pack --dry-run` and rejects package contents that would leak tests, reports, CI metadata, `node_modules`, or other non-runtime artifacts into the published tarball.

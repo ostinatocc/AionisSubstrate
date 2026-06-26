@@ -1,12 +1,23 @@
 {
   "name": "@aionis/substrate",
   "version": "0.0.1",
-  "private": true,
   "description": "Aionis-native memory and execution-state substrate experiment.",
   "type": "module",
+  "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
   },
+  "files": [
+    "src/",
+    "scripts/",
+    "docs/",
+    "README.md",
+    "tsconfig.json"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test test/*.test.ts",
@@ -16,8 +27,19 @@
     "check:runtime-reference-corpus": "node scripts/runtime-reference-corpus.ts",
     "make:runtime-product-reference": "node scripts/runtime-product-reference-fixture.ts",
     "check:external-admission-parity": "node scripts/external-admission-parity.ts",
-    "check:runtime-dual-write": "node scripts/runtime-dual-write-experiment.ts"
+    "check:runtime-dual-write": "node scripts/runtime-dual-write-experiment.ts",
+    "check:pack": "node scripts/verify-package.ts",
+    "check:release": "npm run typecheck && npm test && npm run bench:contract && npm run check:pack"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ostinatocc/AionisSubstrate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ostinatocc/AionisSubstrate/issues"
+  },
+  "homepage": "https://github.com/ostinatocc/AionisSubstrate#readme",
+  "packageManager": "npm@11.6.2",
   "engines": {
     "node": ">=24"
   },
