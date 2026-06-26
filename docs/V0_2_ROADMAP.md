@@ -64,7 +64,7 @@ Make the substrate boundary easier to consume without widening policy scope:
 - document install, minimal API usage, and sidecar reports separately;
 - keep repository-only Runtime process experiments explicit and separate.
 
-Initial implementation status: the package exposes `aionis-substrate sidecar` for read-only snapshot/reference checks. It does not start Runtime, mutate Runtime storage, or implement Runtime admission policy.
+Initial implementation status: the package exposes `aionis-substrate sidecar` for read-only snapshot/reference checks and store commands for inspect, preview-context, backup, restore, compact, and Runtime snapshot import. These commands do not start Runtime, mutate Runtime storage, or implement Runtime admission policy.
 
 ## Excluded
 

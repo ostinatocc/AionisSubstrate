@@ -6,11 +6,12 @@ All notable changes to Aionis Substrate are documented here.
 
 ### Added
 
-- Nothing yet.
+- CLI commands for `inspect`, `preview-context`, `backup`, `restore`, `compact`, and `import-runtime-snapshot`.
+- CLI integration tests that run the store commands against real SQLite stores and Runtime Lite snapshot fixtures.
 
 ### Changed
 
-- Nothing yet.
+- CLI documentation now covers store operations, Runtime snapshot import, and sidecar checks as separate surfaces.
 
 ## 0.1.1 - 2026-06-26
 

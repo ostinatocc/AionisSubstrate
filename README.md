@@ -35,6 +35,16 @@ After installing into a project:
 npx aionis-substrate --help
 ```
 
+Common CLI operations:
+
+```bash
+npx aionis-substrate inspect --adapter sqlite --path ./substrate.sqlite --scope repo-a
+npx aionis-substrate preview-context --adapter sqlite --path ./substrate.sqlite --scope repo-a
+npx aionis-substrate backup --adapter sqlite --path ./substrate.sqlite --output ./backup.json
+npx aionis-substrate restore --adapter sqlite --path ./restored.sqlite --input ./backup.json
+npx aionis-substrate compact --adapter sqlite --path ./substrate.sqlite
+```
+
 ## Goal
 
 Define the storage semantics Aionis needs before choosing or building a storage engine:

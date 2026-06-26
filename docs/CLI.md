@@ -1,9 +1,11 @@
 # CLI
 
-`@aionis/substrate` publishes a small CLI for validation and sidecar integration work.
+`@aionis/substrate` publishes a small CLI for local store operations, validation, and sidecar integration work.
 
 It is intentionally narrow:
 
+- it inspects, previews, backs up, restores, and compacts Substrate stores;
+- it imports Runtime Lite SQLite snapshots into separate Substrate stores;
 - it runs read-only checks over existing Runtime evidence;
 - it writes reports to local files;
 - it does not start Aionis Runtime unless you explicitly use the separate repository script `check:runtime-dual-write`;
@@ -25,6 +27,98 @@ npx aionis-substrate --help
 ```
 
 The CLI requires Node 24+.
+
+## Store Commands
+
+All store commands use explicit adapter and path arguments:
+
+```bash
+npx aionis-substrate inspect --adapter sqlite --path ./substrate.sqlite --scope repo-a
+npx aionis-substrate preview-context --adapter sqlite --path ./substrate.sqlite --scope repo-a --query "continue runtime work"
+npx aionis-substrate backup --adapter sqlite --path ./substrate.sqlite --output ./substrate-backup.json
+npx aionis-substrate restore --adapter sqlite --path ./restored.sqlite --input ./substrate-backup.json
+npx aionis-substrate compact --adapter sqlite --path ./substrate.sqlite
+```
+
+Use `--adapter file` with a directory path for the file-backed adapter:
+
+```bash
+npx aionis-substrate inspect --adapter file --path ./substrate-store --scope repo-a
+```
+
+### Inspect
+
+`inspect` prints store metadata. With `--scope`, it also prints scoped counts and memory-node summaries:
+
+```bash
+npx aionis-substrate inspect \
+  --adapter sqlite \
+  --path ./substrate.sqlite \
+  --scope repo-a
+```
+
+The report contract is `aionis_substrate_inspect_report_v1`.
+
+### Preview Context
+
+`preview-context` compiles the governed buckets without writing a `memory.decision.recorded` receipt:
+
+```bash
+npx aionis-substrate preview-context \
+  --adapter sqlite \
+  --path ./substrate.sqlite \
+  --scope repo-a \
+  --query "continue the current route" \
+  --max-per-bucket 8
+```
+
+The report includes `read_only: true` when event counts and sequence numbers are unchanged.
+
+### Backup and Restore
+
+`backup` writes a checksum-covered event backup:
+
+```bash
+npx aionis-substrate backup \
+  --adapter sqlite \
+  --path ./substrate.sqlite \
+  --output ./substrate-backup.json
+```
+
+`restore` verifies the backup before writing an empty target:
+
+```bash
+npx aionis-substrate restore \
+  --adapter sqlite \
+  --path ./restored.sqlite \
+  --input ./substrate-backup.json
+```
+
+Use `--overwrite` only when replacing an existing restore target is intentional.
+
+### Compact
+
+`compact` rewrites the event history into one checkpoint event without changing governed state:
+
+```bash
+npx aionis-substrate compact \
+  --adapter sqlite \
+  --path ./substrate.sqlite
+```
+
+## Runtime Snapshot Import
+
+Use `import-runtime-snapshot` to copy Runtime Lite SQLite evidence into a separate Substrate store:
+
+```bash
+npx aionis-substrate import-runtime-snapshot \
+  --source /path/to/aionis-runtime-lite.sqlite \
+  --target ./substrate.sqlite \
+  --adapter sqlite \
+  --scope repo-a
+```
+
+The Runtime source is opened read-only. The target is a Substrate store owned by this command.
 
 ## Sidecar Check
 
