@@ -128,6 +128,8 @@ Runtime Zvec candidate-index validation is documented in [docs/RUNTIME_ZVEC_CAND
 
 Zvec scale and maintenance validation is documented in [docs/ZVEC_SCALE_MAINTENANCE.md](docs/ZVEC_SCALE_MAINTENANCE.md).
 
+Provider-backed Zvec embedding validation is documented in [docs/ZVEC_PROVIDER_EMBEDDING_EVAL.md](docs/ZVEC_PROVIDER_EMBEDDING_EVAL.md).
+
 Runtime reference corpus parity is documented in [docs/RUNTIME_REFERENCE_CORPUS.md](docs/RUNTIME_REFERENCE_CORPUS.md).
 
 Runtime sidecar stabilization is documented in [docs/RUNTIME_SIDECAR_STABILIZATION.md](docs/RUNTIME_SIDECAR_STABILIZATION.md).
@@ -398,3 +400,18 @@ npm run check:zvec-scale -- \
 ```
 
 This writes a temporary SQLite truth store with a Zvec candidate sidecar, verifies write-through index health, compares wide-window Zvec search against canonical Substrate search, checks narrow-window seeded recovery, transitions lifecycle state, compacts, reopens, and writes a report under `reports/zvec-scale-*`.
+
+Provider-backed Zvec embedding eval:
+
+```bash
+AIONIS_EMBEDDING_API_KEY=... \
+AIONIS_EMBEDDING_MODEL=text-embedding-3-small \
+npm run check:zvec-provider-embedding -- \
+  --base-url https://api.openai.com/v1 \
+  --nodes 240 \
+  --scopes 4 \
+  --queries 20 \
+  --candidate-limit 20
+```
+
+This uses a real embedding provider through an OpenAI-compatible `/embeddings` endpoint, stores provider vectors on generated Substrate nodes, runs Zvec candidate search, and reports both raw Zvec candidate hit rate and final Substrate search hit rate.
