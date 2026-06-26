@@ -3,22 +3,24 @@
   "version": "0.0.1",
   "description": "Aionis-native memory and execution-state substrate experiment.",
   "type": "module",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
   },
   "files": [
-    "src/",
-    "scripts/",
+    "dist/",
     "docs/",
-    "README.md",
-    "tsconfig.json"
+    "README.md"
   ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "node --test test/*.test.ts",
     "bench:contract": "node scripts/substrate-contract-benchmark.ts",
@@ -28,8 +30,10 @@
     "make:runtime-product-reference": "node scripts/runtime-product-reference-fixture.ts",
     "check:external-admission-parity": "node scripts/external-admission-parity.ts",
     "check:runtime-dual-write": "node scripts/runtime-dual-write-experiment.ts",
-    "check:pack": "node scripts/verify-package.ts",
-    "check:release": "npm run typecheck && npm test && npm run bench:contract && npm run check:pack"
+    "check:pack": "npm run build && node scripts/verify-package.ts",
+    "check:install-smoke": "npm run build && node scripts/install-smoke.ts",
+    "check:scale": "node scripts/scale-test.ts",
+    "check:release": "npm run typecheck && npm test && npm run bench:contract && npm run check:pack && npm run check:install-smoke"
   },
   "repository": {
     "type": "git",

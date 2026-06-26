@@ -15,11 +15,13 @@ type PackDryRun = {
 const requiredFiles = [
   "package.json",
   "README.md",
-  "src/index.ts",
-  "src/types.ts",
-  "src/file-substrate.ts",
-  "src/sqlite-substrate.ts",
-  "src/search.ts",
+  "dist/index.js",
+  "dist/index.d.ts",
+  "dist/types.js",
+  "dist/types.d.ts",
+  "dist/file-substrate.js",
+  "dist/sqlite-substrate.js",
+  "dist/search.js",
   "docs/API_USAGE.md",
   "docs/STORE_CONTRACT.md",
   "docs/ADAPTER_CONTRACT.md",
@@ -28,9 +30,7 @@ const requiredFiles = [
 const allowedPrefixes = [
   "package.json",
   "README.md",
-  "tsconfig.json",
-  "src/",
-  "scripts/",
+  "dist/",
   "docs/",
 ];
 
@@ -39,9 +39,10 @@ const forbiddenPrefixes = [
   ".github/",
   "node_modules/",
   "reports/",
+  "scripts/",
+  "src/",
   "test/",
   "coverage/",
-  "dist/",
 ];
 
 const raw = execFileSync("npm", ["pack", "--dry-run", "--json"], {

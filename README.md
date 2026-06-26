@@ -180,9 +180,11 @@ The soak report includes per-scenario latency summaries, chain-probe latency, re
 
 ```bash
 npm run typecheck
+npm run build
 npm test
 npm run bench:contract
 npm run check:pack
+npm run check:install-smoke
 ```
 
 The CI workflow runs the same checks on every push and pull request.
@@ -194,3 +196,17 @@ npm run check:release
 ```
 
 `check:pack` runs `npm pack --dry-run` and rejects package contents that would leak tests, reports, CI metadata, `node_modules`, or other non-runtime artifacts into the published tarball.
+
+`check:install-smoke` packs the built package, installs that tarball into a fresh temporary project, imports `@aionis/substrate`, and runs real file/SQLite store operations from the installed package.
+
+## Scale Smoke
+
+```bash
+npm run check:scale -- \
+  --nodes 10000 \
+  --scopes 10 \
+  --relations 2000 \
+  --feedback 1000
+```
+
+The scale smoke writes a temporary SQLite substrate, verifies event sequence continuity, runs scoped search, compiles context, compacts the store, reopens it, and writes a report under `reports/scale-*`.
