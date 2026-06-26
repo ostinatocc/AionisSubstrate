@@ -264,6 +264,8 @@ export type AionisCompactionReport = {
 export type AionisMemorySearchInput = {
   scope: string;
   query?: string | null;
+  queryVector?: number[];
+  embeddingModel?: string;
   kinds?: AionisMemoryKind[];
   lifecycle?: AionisLifecycleState[];
   authority?: AionisAuthorityState[];
@@ -273,6 +275,7 @@ export type AionisMemorySearchInput = {
   minConfidence?: number;
   updatedAfter?: string;
   updatedBefore?: string;
+  candidateLimit?: number;
   limit?: number;
 };
 

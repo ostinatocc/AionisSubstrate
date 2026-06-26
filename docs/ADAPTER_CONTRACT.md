@@ -100,7 +100,7 @@ Given the same durable node state, adapters must return the same `searchNodes` i
 
 Search is read-only. It must not append `memory.decision.recorded`, lifecycle events, or any other event.
 
-Search is not a vector index and not the full Runtime admission policy. It is a deterministic substrate query for locating candidate memory nodes before higher-level governance decides whether they can affect an Agent turn.
+Search is a deterministic substrate query for locating candidate memory nodes before higher-level governance decides whether they can affect an Agent turn. Vector candidate indexes can narrow the search window, while final node loading and scoring stay inside the adapter's canonical Substrate path.
 
 When a candidate index is configured, both adapters must preserve the same final `searchNodes` ids, scores, and reason-code semantics. The index is allowed to preselect candidate ids, but the adapter must reload canonical nodes from the truth store before returning results.
 
@@ -110,6 +110,7 @@ Candidate index synchronization requirements:
 - `putNode` write-through updates the index after the durable node mutation succeeds;
 - `transitionLifecycle` write-through updates the index after the durable lifecycle mutation succeeds;
 - `verify(nodes)` must expose missing, orphan, and stale entries so operators can rebuild instead of trusting silent drift.
+- Zvec-backed indexes may require `queryVector`; if no usable query vector is supplied, the adapter must fall back to canonical deterministic search instead of returning an empty result set.
 
 ### 8. Context Preview and Decision Receipt Side Effect
 
@@ -176,7 +177,7 @@ The test suite currently checks:
 The adapter contract does not define:
 
 - vector similarity search;
-- embedding model management;
+- embedding model management or embedding provider calls;
 - full Aionis Runtime admission policy;
 - SaaS tenancy;
 - external Agent orchestration.

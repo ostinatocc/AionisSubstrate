@@ -171,6 +171,53 @@ const results = await store.searchNodes({
 
 The index is optional. When configured, it receives write-through node updates and is rebuilt on open unless `rebuildCandidateIndexOnOpen: false` is set. Search still reloads canonical nodes from the store and applies Substrate scoring/filtering; the index only supplies candidate ids.
 
+### Zvec Candidate Index
+
+Install Zvec only when local vector preselection is needed:
+
+```bash
+npm install @aionis/substrate @zvec/zvec
+```
+
+```ts
+import { createZvecCandidateIndex, openSqliteAionisSubstrate } from "@aionis/substrate";
+
+const candidateIndex = createZvecCandidateIndex({
+  path: "./substrate.zvec",
+  embeddingModel: "text-embedding-3-small",
+});
+
+const store = await openSqliteAionisSubstrate({
+  path: "./substrate.sqlite",
+  candidateIndex,
+});
+
+await store.putNode({
+  id: "route-current",
+  scope: "repo-a",
+  kind: "procedure",
+  summary: "Use src/runtime.ts after verifier passed.",
+  lifecycle: "active",
+  authority: "trusted",
+  confidence: 0.95,
+  targetFiles: ["src/runtime.ts"],
+  metadata: {
+    embedding_model: "text-embedding-3-small",
+    embedding: [0.12, 0.34, 0.56],
+  },
+});
+
+const results = await store.searchNodes({
+  scope: "repo-a",
+  queryVector: [0.11, 0.35, 0.55],
+  embeddingModel: "text-embedding-3-small",
+  candidateLimit: 20,
+  limit: 10,
+});
+```
+
+`createZvecCandidateIndex` is a candidate-index adapter. File/SQLite remain the truth store, and queries without `queryVector` fall back to deterministic Substrate search.
+
 ## Preview Context
 
 ```ts

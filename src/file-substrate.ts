@@ -187,8 +187,9 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
 
   async function searchWithCandidateIndex(input: Parameters<typeof searchMemoryNodes>[1]) {
     if (!candidateIndex) return searchMemoryNodes(Array.from(state.nodes.values()), input);
-    const indexLimit = Math.max(input.limit ?? 50, 200);
+    const indexLimit = input.candidateLimit ?? Math.max(input.limit ?? 50, 200);
     const candidates = await candidateIndex.search({ ...input, limit: indexLimit });
+    if (candidates === null) return searchMemoryNodes(Array.from(state.nodes.values()), input);
     const candidateKeys = new Set(candidates.map((candidate) => eventKey(candidate.scope, candidate.memoryId)));
     const candidateReasons = new Map(candidates.map((candidate) => [
       eventKey(candidate.scope, candidate.memoryId),

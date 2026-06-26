@@ -709,8 +709,14 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
         return searchMemoryNodes(nodes, input);
       });
     }
-    const indexLimit = Math.max(input.limit ?? 50, 200);
+    const indexLimit = input.candidateLimit ?? Math.max(input.limit ?? 50, 200);
     const candidates = await candidateIndex.search({ ...input, limit: indexLimit });
+    if (candidates === null) {
+      return await enqueue(() => {
+        const nodes = (db.prepare("SELECT * FROM memory_nodes WHERE scope = ?").all(input.scope) as SqliteMemoryNodeRow[]).map(rowToNode);
+        return searchMemoryNodes(nodes, input);
+      });
+    }
     const candidateKeys = new Set(candidates.map((candidate) => `${candidate.scope}\u0000${candidate.memoryId}`));
     const candidateReasons = new Map(candidates.map((candidate) => [
       `${candidate.scope}\u0000${candidate.memoryId}`,

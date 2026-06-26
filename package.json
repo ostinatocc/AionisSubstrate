@@ -69,6 +69,15 @@
   "license": "Apache-2.0",
   "devDependencies": {
     "@types/node": "^26.0.1",
+    "@zvec/zvec": "^0.5.0",
     "typescript": "^6.0.3"
+  },
+  "peerDependencies": {
+    "@zvec/zvec": "^0.5.0"
+  },
+  "peerDependenciesMeta": {
+    "@zvec/zvec": {
+      "optional": true
+    }
   }
 }

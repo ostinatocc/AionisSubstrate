@@ -26,7 +26,7 @@ export type AionisCandidateIndexHealthReport = {
 export type AionisCandidateIndex = {
   upsertNode(node: AionisMemoryNode): Promise<void>;
   deleteNode(scope: string, id: string): Promise<void>;
-  search(input: AionisMemorySearchInput): Promise<AionisCandidateIndexSearchResult[]>;
+  search(input: AionisMemorySearchInput): Promise<AionisCandidateIndexSearchResult[] | null>;
   rebuild(nodes: AionisMemoryNode[]): Promise<AionisCandidateIndexHealthReport>;
   verify(nodes: AionisMemoryNode[]): Promise<AionisCandidateIndexHealthReport>;
   close?(): Promise<void>;

@@ -114,7 +114,7 @@ The index contract is:
 - indexed search may narrow candidate ids, but returned results are still canonical substrate nodes with substrate scoring and reason codes;
 - index lookup must not append events, mutate lifecycle state, or produce admission decisions.
 
-This boundary makes a Zvec or ANN-backed adapter possible later without turning the index into the memory database or the admission policy.
+This boundary allows `createZvecCandidateIndex` and future ANN-backed adapters without turning the index into the memory database or the admission policy.
 
 ### Relation Graph
 

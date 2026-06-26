@@ -75,11 +75,11 @@ Add an optional index boundary for database-style candidate lookup:
 - `verify(nodes)` reports missing, orphan, and stale entries;
 - final search results still come from canonical Substrate nodes.
 
-Initial implementation status: `createMemoryCandidateIndex` provides a deterministic in-process candidate index with rebuild, verify, upsert, delete, and search. File and SQLite adapters can use it to narrow candidates before applying the existing Substrate search contract. A future Zvec-backed adapter can implement the same interface without changing truth storage or admission policy.
+Initial implementation status: `createMemoryCandidateIndex` provides a deterministic in-process candidate index with rebuild, verify, upsert, delete, and search. `createZvecCandidateIndex` provides an optional Zvec-backed candidate index for local vector preselection. File and SQLite adapters can use either one to narrow candidates before applying the existing Substrate search contract.
 
 ## Excluded
 
-- Built-in vector embeddings, hosted ANN services, or semantic recall policy.
+- Built-in embedding generation, hosted ANN services, or semantic recall policy.
 - Full Aionis Runtime admission policy.
 - LLM-as-judge or model-generated lifecycle policy.
 - Agent orchestration or external Agent harnesses.

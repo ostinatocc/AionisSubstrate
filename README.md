@@ -4,7 +4,7 @@ Aionis Substrate is an independent storage-contract project for Aionis memory an
 
 It defines the durable substrate Aionis needs for governed working memory: append-only evidence, lifecycle state, relations, feedback, decision receipts, and context admission buckets.
 
-It is not Aionis Runtime core, not an Agent framework, and not a vector database replacement.
+Aionis Runtime can use this layer as a durable governed memory substrate. Agents and Runtime policy remain above it; file/SQLite remain the truth store; optional indexes such as Zvec can accelerate candidate preselection.
 
 ## Status
 
@@ -76,15 +76,11 @@ Define the storage semantics Aionis needs before choosing or building a storage 
 - decision traces that explain why memory was admitted, downgraded, blocked, or deferred
 - controlled forgetting as state transitions, not silent deletion
 
-## What It Is Not
+## Product Boundary
 
-- not a RAG library;
-- not a vector index;
-- not a chat memory store;
-- not a benchmark harness;
-- not the full Aionis Runtime policy engine.
+Aionis Substrate owns durable memory evidence, lifecycle state, relation graph, feedback receipts, audit reads, side-effect-free preview, and the minimum governed context contract.
 
-The admission logic here is a substrate-level minimum contract. Full Aionis Runtime policy remains above this layer.
+Aionis Runtime owns richer admission policy, product orchestration, Agent-facing guide behavior, and model/provider workflows above this storage-contract layer.
 
 ## Current Scope
 
@@ -100,8 +96,9 @@ This first version ships two embedded adapters:
 - the SQLite adapter persists schema metadata, records applied schema migrations, and rejects stores created by a newer unsupported schema.
 - event-log backups can be exported, checksum-verified, and restored to either file or SQLite stores.
 - checkpoint compaction can rewrite a store event log to one checksum-covered checkpoint event without changing governed state.
-- `searchNodes` provides scoped deterministic lexical/structured search over memory nodes without mutating events or admission state. It is not ANN, vector recall, semantic retrieval, or a Recall Engine.
+- `searchNodes` provides scoped deterministic lexical/structured search over memory nodes without mutating events or admission state.
 - stores can be opened with an optional candidate index. The index is rebuilt on open by default, receives write-through node updates, can be verified for missing/orphan/stale entries, and only narrows candidate ids before Substrate reloads truth nodes and scores them.
+- `createZvecCandidateIndex` provides an optional Zvec-backed candidate index for local vector preselection. It requires installing `@zvec/zvec`; file/SQLite remain the truth store.
 - `importRuntimeLiteSnapshot` can import an existing Runtime Lite SQLite database into an isolated Substrate store through a read-only source connection.
 - `runRuntimeLiveSidecarOnce`, `runRuntimeLiveSidecarWatch`, and `aionis-substrate live-sidecar` incrementally mirror Runtime Lite evidence into a separate Substrate target through a checkpoint file.
 
