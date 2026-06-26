@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { readdir, stat, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { runRuntimeSnapshotParity, type RuntimeReferenceSurfaces } from "./runtime-snapshot-parity.ts";
+import type { RuntimeSnapshotImportDiagnostics } from "./runtime-snapshot-importer.ts";
 
 export type RuntimeSnapshotCorpusScopeCandidate = {
   source_path: string;
@@ -18,6 +19,7 @@ export type RuntimeSnapshotCorpusScopeReport = {
   status: "passed" | "failed";
   nodes_imported: number;
   nodes_skipped: number;
+  import_diagnostics: RuntimeSnapshotImportDiagnostics | null;
   warnings: string[];
   bucket_counts: Record<keyof RuntimeReferenceSurfaces, number>;
   error: string | null;
@@ -185,6 +187,7 @@ export async function runRuntimeSnapshotCorpus(options: RuntimeSnapshotCorpusOpt
         status: "passed",
         nodes_imported: report.import_summary.nodesImported,
         nodes_skipped: report.import_summary.nodesSkipped,
+        import_diagnostics: report.import_summary.diagnostics,
         warnings: report.import_summary.warnings,
         bucket_counts: countBuckets(report.substrate_context),
         error: null,
@@ -197,6 +200,7 @@ export async function runRuntimeSnapshotCorpus(options: RuntimeSnapshotCorpusOpt
         status: "failed",
         nodes_imported: 0,
         nodes_skipped: 0,
+        import_diagnostics: null,
         warnings: [],
         bucket_counts: { use_now: 0, inspect_before_use: 0, do_not_use: 0, rehydrate: 0 },
         error: (err as Error).message,

@@ -504,6 +504,146 @@ function insertRuntimeProductOutcomeRows(path: string): void {
   db.close();
 }
 
+function insertRuntimeDiagnosticRows(path: string): void {
+  const db = new DatabaseSync(path);
+  const insertNode = db.prepare(`
+    INSERT INTO lite_memory_nodes (
+      id, scope, client_id, type, tier, title, text_summary, slots_json, raw_ref, evidence_ref,
+      embedding_vector_json, embedding_model, memory_lane, producer_agent_id, owner_agent_id,
+      owner_team_id, embedding_status, embedding_last_error, salience, importance, confidence,
+      redaction_version, commit_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  insertNode.run(
+    "runtime-empty-summary",
+    "repo-a",
+    "client-empty",
+    "concept",
+    "warm",
+    null,
+    null,
+    JSON.stringify({ summary_kind: "note" }),
+    null,
+    null,
+    null,
+    "fixture-embedding",
+    "shared",
+    "agent-writer",
+    "agent-owner",
+    "team-a",
+    "ready",
+    null,
+    0.2,
+    0.2,
+    0.4,
+    1,
+    "commit-diagnostic",
+    "2026-06-05T00:00:00.000Z",
+  );
+
+  insertNode.run(
+    "runtime-bad-slots",
+    "repo-a",
+    "client-bad-slots",
+    "concept",
+    "warm",
+    "Malformed slots note",
+    "This note imports even though slots_json is malformed.",
+    "{not-json",
+    null,
+    null,
+    null,
+    "fixture-embedding",
+    "shared",
+    "agent-writer",
+    "agent-owner",
+    "team-a",
+    "ready",
+    null,
+    0.2,
+    0.2,
+    0.4,
+    1,
+    "commit-diagnostic",
+    "2026-06-05T00:01:00.000Z",
+  );
+
+  db.prepare(`
+    INSERT INTO lite_memory_edges (
+      id, scope, type, src_id, dst_id, weight, confidence, decay_rate, metadata_json, commit_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    "edge-missing-endpoint",
+    "repo-a",
+    "supports",
+    "runtime-current",
+    "runtime-missing-endpoint",
+    0.5,
+    0.5,
+    0,
+    JSON.stringify({ reason: "missing endpoint diagnostic" }),
+    "commit-diagnostic",
+    "2026-06-05T00:02:00.000Z",
+  );
+
+  db.prepare(`
+    INSERT INTO lite_memory_rule_feedback (
+      id, scope, rule_node_id, run_id, outcome, note, source, decision_id, commit_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    "feedback-missing-node",
+    "repo-a",
+    "runtime-missing-rule",
+    "run-diagnostic",
+    "failed",
+    "missing rule diagnostic",
+    "test",
+    null,
+    "commit-diagnostic",
+    "2026-06-05T00:03:00.000Z",
+  );
+
+  const insertDecision = db.prepare(`
+    INSERT INTO lite_memory_execution_decisions (
+      id, scope, decision_kind, run_id, selected_tool, candidates_json, context_sha256,
+      policy_sha256, source_rule_ids_json, metadata_json, commit_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  insertDecision.run(
+    "decision-missing-source",
+    "repo-a",
+    "tool_selection",
+    "run-diagnostic",
+    "npm test",
+    JSON.stringify(["npm test"]),
+    "ctx-diagnostic",
+    "policy-diagnostic",
+    JSON.stringify(["runtime-missing-rule"]),
+    JSON.stringify({ reason: "missing source diagnostic" }),
+    "commit-diagnostic",
+    "2026-06-05T00:04:00.000Z",
+  );
+
+  insertDecision.run(
+    "decision-non-array-source",
+    "repo-a",
+    "tool_selection",
+    "run-diagnostic",
+    "npm test",
+    JSON.stringify(["npm test"]),
+    "ctx-diagnostic-2",
+    "policy-diagnostic-2",
+    JSON.stringify({ source_rule_id: "runtime-current" }),
+    JSON.stringify({ reason: "non-array source diagnostic" }),
+    "commit-diagnostic",
+    "2026-06-05T00:05:00.000Z",
+  );
+
+  db.close();
+}
+
 test("imports Runtime Lite snapshot into Substrate without mutating source SQLite", async () => {
   await withSqlitePair(async ({ source, target }) => {
     createRuntimeLiteFixture(source);
@@ -553,6 +693,7 @@ test("maps Runtime product execution outcomes and skips audit-only ledgers", asy
     assert.equal(summary.nodesRead, 7);
     assert.equal(summary.nodesImported, 6);
     assert.equal(summary.nodesSkipped, 1);
+    assert.equal(summary.diagnostics.skipReasons.nodes.not_agent_facing, 1);
     assert.ok(summary.warnings.some((warning) => warning.includes("runtime-guide-ledger") && warning.includes("not_agent_facing")));
 
     const context = await store.compileContext({ scope: "repo-a" });
@@ -571,6 +712,40 @@ test("maps Runtime product execution outcomes and skips audit-only ledgers", asy
     const failed = await store.getNode("repo-a", "runtime-failed-advisory");
     assert.equal(failed?.lifecycle, "blocked");
     assert.equal(failed?.authority, "rejected");
+    await store.close();
+  });
+});
+
+test("Runtime snapshot import exposes structured diagnostics for skipped evidence", async () => {
+  await withSqlitePair(async ({ source, target }) => {
+    createRuntimeLiteFixture(source);
+    insertRuntimeProductOutcomeRows(source);
+    insertRuntimeDiagnosticRows(source);
+    const store = await openSqliteAionisSubstrate({ path: target });
+    const summary = await importRuntimeLiteSnapshot({ sourcePath: source, target: store, scope: "repo-a" });
+
+    assert.deepEqual(summary.diagnostics.sourceTables, {
+      lite_memory_nodes: true,
+      lite_memory_edges: true,
+      lite_memory_execution_native_index: true,
+      lite_memory_rule_feedback: true,
+      lite_memory_execution_decisions: true,
+    });
+    assert.equal(summary.nodesRead, 9);
+    assert.equal(summary.nodesImported, 7);
+    assert.equal(summary.diagnostics.skipReasons.nodes.not_agent_facing, 1);
+    assert.equal(summary.diagnostics.skipReasons.nodes.empty_summary, 1);
+    assert.equal(summary.relationsSkipped, 1);
+    assert.equal(summary.diagnostics.skipReasons.relations.missing_imported_endpoint, 1);
+    assert.equal(summary.feedbackSkipped, 1);
+    assert.equal(summary.diagnostics.skipReasons.feedback.missing_imported_rule_node, 1);
+    assert.equal(summary.decisionsSkipped, 2);
+    assert.equal(summary.diagnostics.skipReasons.decisions.no_imported_source_rules, 2);
+    assert.equal(summary.diagnostics.jsonIssues.json_parse_failed, 1);
+    assert.equal(summary.diagnostics.jsonIssues.json_not_array, 1);
+    assert.ok(summary.warnings.some((warning) => warning.includes("runtime-empty-summary") && warning.includes("title/text_summary")));
+    assert.ok(summary.warnings.some((warning) => warning.includes("runtime-bad-slots") && warning.includes("failed to parse JSON")));
+
     await store.close();
   });
 });

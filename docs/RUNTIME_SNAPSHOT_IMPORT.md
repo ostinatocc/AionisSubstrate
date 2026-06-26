@@ -72,7 +72,20 @@ node scripts/import-runtime-snapshot.ts \
   --adapter file
 ```
 
-The command prints a JSON summary with imported/skipped counts and warnings.
+The command prints a JSON summary with imported/skipped counts, warnings, and
+structured diagnostics.
+
+The diagnostic block is machine-readable:
+
+- `sourceTables`: which Runtime Lite tables were present in the read-only source;
+- `skipReasons.nodes`: `not_agent_facing` and `empty_summary` counts;
+- `skipReasons.relations`: relation rows skipped because an endpoint was not imported;
+- `skipReasons.feedback`: feedback rows skipped because the referenced rule node was not imported;
+- `skipReasons.decisions`: decision rows skipped because none of the referenced source rules were imported;
+- `jsonIssues`: malformed or shape-mismatched Runtime JSON fields.
+
+Warnings remain for human inspection, but downstream tooling should prefer the
+diagnostic counters when classifying import coverage failures.
 
 ## Parity Checker
 

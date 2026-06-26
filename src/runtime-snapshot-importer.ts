@@ -35,6 +35,31 @@ export type RuntimeSnapshotImportSummary = {
   decisionsSkipped: number;
   scopes: string[];
   warnings: string[];
+  diagnostics: RuntimeSnapshotImportDiagnostics;
+};
+
+export type RuntimeSnapshotImportTableName =
+  | "lite_memory_nodes"
+  | "lite_memory_edges"
+  | "lite_memory_execution_native_index"
+  | "lite_memory_rule_feedback"
+  | "lite_memory_execution_decisions";
+
+export type RuntimeSnapshotNodeSkipReason = "not_agent_facing" | "empty_summary";
+export type RuntimeSnapshotRelationSkipReason = "missing_imported_endpoint";
+export type RuntimeSnapshotFeedbackSkipReason = "missing_imported_rule_node";
+export type RuntimeSnapshotDecisionSkipReason = "no_imported_source_rules";
+export type RuntimeSnapshotJsonIssueReason = "json_parse_failed" | "json_not_object" | "json_not_array";
+
+export type RuntimeSnapshotImportDiagnostics = {
+  sourceTables: Record<RuntimeSnapshotImportTableName, boolean>;
+  skipReasons: {
+    nodes: Record<RuntimeSnapshotNodeSkipReason, number>;
+    relations: Record<RuntimeSnapshotRelationSkipReason, number>;
+    feedback: Record<RuntimeSnapshotFeedbackSkipReason, number>;
+    decisions: Record<RuntimeSnapshotDecisionSkipReason, number>;
+  };
+  jsonIssues: Record<RuntimeSnapshotJsonIssueReason, number>;
 };
 
 type RuntimeNodeRow = {
@@ -136,6 +161,7 @@ type RuntimeImportState = {
   importedNodeIds: Set<string>;
   importedScopes: Set<string>;
   executionIndex: Map<string, RuntimeExecutionIndexRow>;
+  diagnostics: RuntimeSnapshotImportDiagnostics;
 };
 
 type RuntimeExecutionOutcome = "passed" | "failed" | null;
@@ -147,6 +173,42 @@ function scopeKey(scope: string, id: string): string {
 function tableExists(db: DatabaseSync, tableName: string): boolean {
   const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName) as { name?: string } | undefined;
   return row?.name === tableName;
+}
+
+function createImportDiagnostics(db: DatabaseSync): RuntimeSnapshotImportDiagnostics {
+  return {
+    sourceTables: {
+      lite_memory_nodes: tableExists(db, "lite_memory_nodes"),
+      lite_memory_edges: tableExists(db, "lite_memory_edges"),
+      lite_memory_execution_native_index: tableExists(db, "lite_memory_execution_native_index"),
+      lite_memory_rule_feedback: tableExists(db, "lite_memory_rule_feedback"),
+      lite_memory_execution_decisions: tableExists(db, "lite_memory_execution_decisions"),
+    },
+    skipReasons: {
+      nodes: {
+        not_agent_facing: 0,
+        empty_summary: 0,
+      },
+      relations: {
+        missing_imported_endpoint: 0,
+      },
+      feedback: {
+        missing_imported_rule_node: 0,
+      },
+      decisions: {
+        no_imported_source_rules: 0,
+      },
+    },
+    jsonIssues: {
+      json_parse_failed: 0,
+      json_not_object: 0,
+      json_not_array: 0,
+    },
+  };
+}
+
+function recordJsonIssue(diagnostics: RuntimeSnapshotImportDiagnostics | undefined, reason: RuntimeSnapshotJsonIssueReason): void {
+  if (diagnostics) diagnostics.jsonIssues[reason] += 1;
 }
 
 function clamp(value: number, fallback: number): number {
@@ -165,31 +227,35 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-function parseObject(raw: string | null | undefined, warnings: string[], label: string): JsonObject {
+function parseObject(raw: string | null | undefined, warnings: string[], label: string, diagnostics?: RuntimeSnapshotImportDiagnostics): JsonObject {
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);
     const record = asRecord(parsed);
     if (!record) {
       warnings.push(`${label}: JSON was not an object`);
+      recordJsonIssue(diagnostics, "json_not_object");
       return {};
     }
     return record;
   } catch (err) {
     warnings.push(`${label}: failed to parse JSON (${(err as Error).message})`);
+    recordJsonIssue(diagnostics, "json_parse_failed");
     return {};
   }
 }
 
-function parseArray(raw: string | null | undefined, warnings: string[], label: string): unknown[] {
+function parseArray(raw: string | null | undefined, warnings: string[], label: string, diagnostics?: RuntimeSnapshotImportDiagnostics): unknown[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) return parsed;
     warnings.push(`${label}: JSON was not an array`);
+    recordJsonIssue(diagnostics, "json_not_array");
     return [];
   } catch (err) {
     warnings.push(`${label}: failed to parse JSON (${(err as Error).message})`);
+    recordJsonIssue(diagnostics, "json_parse_failed");
     return [];
   }
 }
@@ -453,10 +519,11 @@ function metadataForNode(row: RuntimeNodeRow, slots: JsonObject, executionIndex:
   };
 }
 
-function mapNode(row: RuntimeNodeRow, executionIndex: RuntimeExecutionIndexRow | undefined, warnings: string[]): AionisMemoryNodeInput | null {
-  const slots = parseObject(row.slots_json, warnings, `node ${row.id} slots_json`);
+function mapNode(row: RuntimeNodeRow, executionIndex: RuntimeExecutionIndexRow | undefined, state: RuntimeImportState): AionisMemoryNodeInput | null {
+  const slots = parseObject(row.slots_json, state.warnings, `node ${row.id} slots_json`, state.diagnostics);
   if (isRuntimeAuditOnlyNode(slots)) {
-    warnings.push(`node ${row.id}: skipped because Runtime marked it not_agent_facing`);
+    state.diagnostics.skipReasons.nodes.not_agent_facing += 1;
+    state.warnings.push(`node ${row.id}: skipped because Runtime marked it not_agent_facing`);
     return null;
   }
   const executionOutcome = deriveRuntimeExecutionOutcome(slots, executionIndex);
@@ -465,7 +532,8 @@ function mapNode(row: RuntimeNodeRow, executionIndex: RuntimeExecutionIndexRow |
   const authority = deriveAuthority(row, slots, lifecycle, executionOutcome);
   const summary = row.text_summary?.trim() || row.title?.trim();
   if (!summary) {
-    warnings.push(`node ${row.id}: skipped because title/text_summary are empty`);
+    state.diagnostics.skipReasons.nodes.empty_summary += 1;
+    state.warnings.push(`node ${row.id}: skipped because title/text_summary are empty`);
     return null;
   }
 
@@ -562,6 +630,7 @@ export async function importRuntimeLiteSnapshot(options: RuntimeSnapshotImportOp
   const sourcePath = options.sourcePath.trim();
   if (!sourcePath) throw new Error("sourcePath is required");
   const db = new DatabaseSync(sourcePath, { readOnly: true });
+  const diagnostics = createImportDiagnostics(db);
   const state: RuntimeImportState = {
     db,
     scope: options.scope?.trim() || null,
@@ -570,6 +639,7 @@ export async function importRuntimeLiteSnapshot(options: RuntimeSnapshotImportOp
     importedNodeIds: new Set(),
     importedScopes: new Set(),
     executionIndex: new Map(),
+    diagnostics,
   };
 
   const summary: RuntimeSnapshotImportSummary = {
@@ -589,6 +659,7 @@ export async function importRuntimeLiteSnapshot(options: RuntimeSnapshotImportOp
     decisionsSkipped: 0,
     scopes: [],
     warnings: state.warnings,
+    diagnostics,
   };
 
   try {
@@ -596,7 +667,7 @@ export async function importRuntimeLiteSnapshot(options: RuntimeSnapshotImportOp
     const nodes = readNodes(state);
     summary.nodesRead = nodes.length;
     for (const row of nodes) {
-      const mapped = mapNode(row, state.executionIndex.get(scopeKey(row.scope, row.id)), state.warnings);
+      const mapped = mapNode(row, state.executionIndex.get(scopeKey(row.scope, row.id)), state);
       if (!mapped) {
         summary.nodesSkipped += 1;
         continue;
@@ -614,6 +685,7 @@ export async function importRuntimeLiteSnapshot(options: RuntimeSnapshotImportOp
       const dstKey = scopeKey(row.scope, row.dst_id);
       if (!state.importedNodeIds.has(srcKey) || !state.importedNodeIds.has(dstKey)) {
         summary.relationsSkipped += 1;
+        state.diagnostics.skipReasons.relations.missing_imported_endpoint += 1;
         state.warnings.push(`edge ${row.id}: skipped because source or target node was not imported`);
         continue;
       }
@@ -632,7 +704,7 @@ export async function importRuntimeLiteSnapshot(options: RuntimeSnapshotImportOp
             weight: row.weight,
             decay_rate: row.decay_rate,
             commit_id: row.commit_id,
-            metadata: parseObject(row.metadata_json, state.warnings, `edge ${row.id} metadata_json`),
+            metadata: parseObject(row.metadata_json, state.warnings, `edge ${row.id} metadata_json`, state.diagnostics),
           },
         },
         createdAt: row.created_at,
@@ -645,6 +717,7 @@ export async function importRuntimeLiteSnapshot(options: RuntimeSnapshotImportOp
     for (const row of feedbackRows) {
       if (!state.importedNodeIds.has(scopeKey(row.scope, row.rule_node_id))) {
         summary.feedbackSkipped += 1;
+        state.diagnostics.skipReasons.feedback.missing_imported_rule_node += 1;
         state.warnings.push(`feedback ${row.id}: skipped because rule node ${row.rule_node_id} was not imported`);
         continue;
       }
@@ -665,7 +738,7 @@ export async function importRuntimeLiteSnapshot(options: RuntimeSnapshotImportOp
     const decisions = readExecutionDecisions(state);
     summary.decisionsRead = decisions.length;
     for (const row of decisions) {
-      const sourceRuleIds = parseArray(row.source_rule_ids_json, state.warnings, `decision ${row.id} source_rule_ids_json`)
+      const sourceRuleIds = parseArray(row.source_rule_ids_json, state.warnings, `decision ${row.id} source_rule_ids_json`, state.diagnostics)
         .filter((item): item is string => typeof item === "string" && item.trim().length > 0);
       const action = decisionActionForRuntimeDecision(row);
       const mappedDecisions: AionisAdmissionDecision[] = sourceRuleIds
@@ -680,6 +753,7 @@ export async function importRuntimeLiteSnapshot(options: RuntimeSnapshotImportOp
         }));
       if (mappedDecisions.length === 0) {
         summary.decisionsSkipped += 1;
+        state.diagnostics.skipReasons.decisions.no_imported_source_rules += 1;
         continue;
       }
       await options.target.recordDecision({

@@ -119,6 +119,9 @@ npx aionis-substrate import-runtime-snapshot \
 ```
 
 The Runtime source is opened read-only. The target is a Substrate store owned by this command.
+The JSON output includes imported/skipped counts plus structured `diagnostics.sourceTables`,
+`diagnostics.skipReasons`, and `diagnostics.jsonIssues` so bridge failures can be classified
+without scraping warning strings.
 
 ## Sidecar Check
 
