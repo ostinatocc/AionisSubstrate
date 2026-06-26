@@ -1,12 +1,12 @@
 {
   "name": "@aionis/substrate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Durable governed memory substrate for Aionis execution state.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "aionis-substrate": "./dist/cli.js"
+    "aionis-substrate": "dist/cli.js"
   },
   "exports": {
     ".": {

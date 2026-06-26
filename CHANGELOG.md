@@ -6,6 +6,16 @@ All notable changes to Aionis Substrate are documented here.
 
 ### Added
 
+- Nothing yet.
+
+### Changed
+
+- Nothing yet.
+
+## 0.1.1 - 2026-06-26
+
+### Added
+
 - v0.2 roadmap that freezes Substrate hardening scope and excludes Runtime policy, vector recall, Agent harnesses, and SaaS concerns.
 - Scoped audit read APIs for relations, feedback, and decision receipts.
 - SQLite schema migration registry with durable applied-migration records.
