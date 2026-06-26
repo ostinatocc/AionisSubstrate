@@ -95,7 +95,14 @@ async function main(): Promise<void> {
     attempted_scopes: report.attempted_scopes,
     passed_scopes: report.passed_scopes,
     failed_scopes: report.failed_scopes,
+    total_nodes_read: report.total_nodes_read,
     total_nodes_imported: report.total_nodes_imported,
+    total_nodes_skipped: report.total_nodes_skipped,
+    total_relations_skipped: report.total_relations_skipped,
+    total_feedback_skipped: report.total_feedback_skipped,
+    total_decisions_skipped: report.total_decisions_skipped,
+    bucket_totals: report.bucket_totals,
+    diagnostics_summary: report.diagnostics_summary,
     total_warnings: report.total_warnings,
   }, null, 2));
 }

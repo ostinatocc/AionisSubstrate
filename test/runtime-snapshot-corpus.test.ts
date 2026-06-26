@@ -150,17 +150,38 @@ test("runtime snapshot corpus scans Runtime SQLite files and imports selected sc
     assert.equal(report.attempted_scopes, 1);
     assert.equal(report.passed_scopes, 1);
     assert.equal(report.failed_scopes, 0);
+    assert.equal(report.total_nodes_read, 3);
     assert.equal(report.total_nodes_imported, 3);
+    assert.equal(report.total_nodes_skipped, 0);
+    assert.equal(report.total_relations_read, 0);
+    assert.equal(report.total_feedback_read, 0);
+    assert.equal(report.total_decisions_read, 0);
     assert.ok(report.scan_warnings.some((warning) => warning.includes("not-runtime.sqlite")));
+    assert.deepEqual(report.bucket_totals, {
+      use_now: 1,
+      inspect_before_use: 1,
+      do_not_use: 0,
+      rehydrate: 1,
+    });
+    assert.deepEqual(report.diagnostics_summary.skip_reasons.nodes, {
+      not_agent_facing: 0,
+      empty_summary: 0,
+    });
+    assert.equal(report.diagnostics_summary.source_table_presence.lite_memory_nodes, 1);
+    assert.equal(report.diagnostics_summary.source_table_presence.lite_memory_edges, 0);
     assert.deepEqual(report.scope_reports[0]?.bucket_counts, {
       use_now: 1,
       inspect_before_use: 1,
       do_not_use: 0,
       rehydrate: 1,
     });
+    assert.equal(report.scope_reports[0]?.nodes_read, 3);
+    assert.equal(report.scope_reports[0]?.nodes_imported, 3);
+    assert.equal(report.scope_reports[0]?.nodes_skipped, 0);
 
-    const persisted = JSON.parse(await readFile(output, "utf8")) as { attempted_scopes: number };
+    const persisted = JSON.parse(await readFile(output, "utf8")) as { attempted_scopes: number; bucket_totals: { use_now: number } };
     assert.equal(persisted.attempted_scopes, 1);
+    assert.equal(persisted.bucket_totals.use_now, 1);
 
     const sourceDb = new DatabaseSync(source, { readOnly: true });
     const sourceNodeCount = sourceDb.prepare("SELECT count(*) AS count FROM lite_memory_nodes").get() as { count: number };

@@ -2,7 +2,10 @@ import { DatabaseSync } from "node:sqlite";
 import { readdir, stat, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { runRuntimeSnapshotParity, type RuntimeReferenceSurfaces } from "./runtime-snapshot-parity.ts";
-import type { RuntimeSnapshotImportDiagnostics } from "./runtime-snapshot-importer.ts";
+import type {
+  RuntimeSnapshotImportDiagnostics,
+  RuntimeSnapshotImportTableName,
+} from "./runtime-snapshot-importer.ts";
 
 export type RuntimeSnapshotCorpusScopeCandidate = {
   source_path: string;
@@ -17,12 +20,28 @@ export type RuntimeSnapshotCorpusScopeReport = {
   scope: string;
   node_count: number;
   status: "passed" | "failed";
+  nodes_read: number;
   nodes_imported: number;
   nodes_skipped: number;
+  relations_read: number;
+  relations_imported: number;
+  relations_skipped: number;
+  feedback_read: number;
+  feedback_imported: number;
+  feedback_skipped: number;
+  decisions_read: number;
+  decisions_imported: number;
+  decisions_skipped: number;
   import_diagnostics: RuntimeSnapshotImportDiagnostics | null;
   warnings: string[];
   bucket_counts: Record<keyof RuntimeReferenceSurfaces, number>;
   error: string | null;
+};
+
+export type RuntimeSnapshotCorpusDiagnosticsSummary = {
+  source_table_presence: Record<RuntimeSnapshotImportTableName, number>;
+  skip_reasons: RuntimeSnapshotImportDiagnostics["skipReasons"];
+  json_issues: RuntimeSnapshotImportDiagnostics["jsonIssues"];
 };
 
 export type RuntimeSnapshotCorpusReport = {
@@ -42,9 +61,21 @@ export type RuntimeSnapshotCorpusReport = {
   attempted_scopes: number;
   passed_scopes: number;
   failed_scopes: number;
+  total_nodes_read: number;
   total_nodes_imported: number;
   total_nodes_skipped: number;
+  total_relations_read: number;
+  total_relations_imported: number;
+  total_relations_skipped: number;
+  total_feedback_read: number;
+  total_feedback_imported: number;
+  total_feedback_skipped: number;
+  total_decisions_read: number;
+  total_decisions_imported: number;
+  total_decisions_skipped: number;
   total_warnings: number;
+  bucket_totals: Record<keyof RuntimeReferenceSurfaces, number>;
+  diagnostics_summary: RuntimeSnapshotCorpusDiagnosticsSummary;
   scan_warnings: string[];
   scope_reports: RuntimeSnapshotCorpusScopeReport[];
 };
@@ -146,6 +177,69 @@ function countBuckets(surfaces: RuntimeReferenceSurfaces): Record<keyof RuntimeR
   };
 }
 
+function emptyBucketTotals(): Record<keyof RuntimeReferenceSurfaces, number> {
+  return { use_now: 0, inspect_before_use: 0, do_not_use: 0, rehydrate: 0 };
+}
+
+function emptyDiagnosticsSummary(): RuntimeSnapshotCorpusDiagnosticsSummary {
+  return {
+    source_table_presence: {
+      lite_memory_nodes: 0,
+      lite_memory_edges: 0,
+      lite_memory_execution_native_index: 0,
+      lite_memory_rule_feedback: 0,
+      lite_memory_execution_decisions: 0,
+    },
+    skip_reasons: {
+      nodes: {
+        not_agent_facing: 0,
+        empty_summary: 0,
+      },
+      relations: {
+        missing_imported_endpoint: 0,
+      },
+      feedback: {
+        missing_imported_rule_node: 0,
+      },
+      decisions: {
+        no_imported_source_rules: 0,
+      },
+    },
+    json_issues: {
+      json_parse_failed: 0,
+      json_not_object: 0,
+      json_not_array: 0,
+    },
+  };
+}
+
+function addBucketTotals(
+  target: Record<keyof RuntimeReferenceSurfaces, number>,
+  source: Record<keyof RuntimeReferenceSurfaces, number>,
+): void {
+  for (const bucket of Object.keys(target) as Array<keyof RuntimeReferenceSurfaces>) {
+    target[bucket] += source[bucket];
+  }
+}
+
+function addDiagnosticsSummary(
+  target: RuntimeSnapshotCorpusDiagnosticsSummary,
+  source: RuntimeSnapshotImportDiagnostics | null,
+): void {
+  if (!source) return;
+  for (const table of Object.keys(target.source_table_presence) as RuntimeSnapshotImportTableName[]) {
+    if (source.sourceTables[table]) target.source_table_presence[table] += 1;
+  }
+  target.skip_reasons.nodes.not_agent_facing += source.skipReasons.nodes.not_agent_facing;
+  target.skip_reasons.nodes.empty_summary += source.skipReasons.nodes.empty_summary;
+  target.skip_reasons.relations.missing_imported_endpoint += source.skipReasons.relations.missing_imported_endpoint;
+  target.skip_reasons.feedback.missing_imported_rule_node += source.skipReasons.feedback.missing_imported_rule_node;
+  target.skip_reasons.decisions.no_imported_source_rules += source.skipReasons.decisions.no_imported_source_rules;
+  target.json_issues.json_parse_failed += source.jsonIssues.json_parse_failed;
+  target.json_issues.json_not_object += source.jsonIssues.json_not_object;
+  target.json_issues.json_not_array += source.jsonIssues.json_not_array;
+}
+
 export async function runRuntimeSnapshotCorpus(options: RuntimeSnapshotCorpusOptions): Promise<RuntimeSnapshotCorpusReport> {
   if (options.rootPaths.length === 0) throw new Error("at least one root path is required");
   const maxFiles = options.maxFiles === undefined ? null : options.maxFiles;
@@ -185,8 +279,18 @@ export async function runRuntimeSnapshotCorpus(options: RuntimeSnapshotCorpusOpt
         scope: candidate.scope,
         node_count: candidate.node_count,
         status: "passed",
+        nodes_read: report.import_summary.nodesRead,
         nodes_imported: report.import_summary.nodesImported,
         nodes_skipped: report.import_summary.nodesSkipped,
+        relations_read: report.import_summary.relationsRead,
+        relations_imported: report.import_summary.relationsImported,
+        relations_skipped: report.import_summary.relationsSkipped,
+        feedback_read: report.import_summary.feedbackRead,
+        feedback_imported: report.import_summary.feedbackImported,
+        feedback_skipped: report.import_summary.feedbackSkipped,
+        decisions_read: report.import_summary.decisionsRead,
+        decisions_imported: report.import_summary.decisionsImported,
+        decisions_skipped: report.import_summary.decisionsSkipped,
         import_diagnostics: report.import_summary.diagnostics,
         warnings: report.import_summary.warnings,
         bucket_counts: countBuckets(report.substrate_context),
@@ -198,14 +302,31 @@ export async function runRuntimeSnapshotCorpus(options: RuntimeSnapshotCorpusOpt
         scope: candidate.scope,
         node_count: candidate.node_count,
         status: "failed",
+        nodes_read: 0,
         nodes_imported: 0,
         nodes_skipped: 0,
+        relations_read: 0,
+        relations_imported: 0,
+        relations_skipped: 0,
+        feedback_read: 0,
+        feedback_imported: 0,
+        feedback_skipped: 0,
+        decisions_read: 0,
+        decisions_imported: 0,
+        decisions_skipped: 0,
         import_diagnostics: null,
         warnings: [],
         bucket_counts: { use_now: 0, inspect_before_use: 0, do_not_use: 0, rehydrate: 0 },
         error: (err as Error).message,
       });
     }
+  }
+
+  const bucketTotals = emptyBucketTotals();
+  const diagnosticsSummary = emptyDiagnosticsSummary();
+  for (const scopeReport of scopeReports) {
+    addBucketTotals(bucketTotals, scopeReport.bucket_counts);
+    addDiagnosticsSummary(diagnosticsSummary, scopeReport.import_diagnostics);
   }
 
   const report: RuntimeSnapshotCorpusReport = {
@@ -225,9 +346,21 @@ export async function runRuntimeSnapshotCorpus(options: RuntimeSnapshotCorpusOpt
     attempted_scopes: scopeReports.length,
     passed_scopes: scopeReports.filter((scope) => scope.status === "passed").length,
     failed_scopes: scopeReports.filter((scope) => scope.status === "failed").length,
+    total_nodes_read: scopeReports.reduce((sum, scope) => sum + scope.nodes_read, 0),
     total_nodes_imported: scopeReports.reduce((sum, scope) => sum + scope.nodes_imported, 0),
     total_nodes_skipped: scopeReports.reduce((sum, scope) => sum + scope.nodes_skipped, 0),
+    total_relations_read: scopeReports.reduce((sum, scope) => sum + scope.relations_read, 0),
+    total_relations_imported: scopeReports.reduce((sum, scope) => sum + scope.relations_imported, 0),
+    total_relations_skipped: scopeReports.reduce((sum, scope) => sum + scope.relations_skipped, 0),
+    total_feedback_read: scopeReports.reduce((sum, scope) => sum + scope.feedback_read, 0),
+    total_feedback_imported: scopeReports.reduce((sum, scope) => sum + scope.feedback_imported, 0),
+    total_feedback_skipped: scopeReports.reduce((sum, scope) => sum + scope.feedback_skipped, 0),
+    total_decisions_read: scopeReports.reduce((sum, scope) => sum + scope.decisions_read, 0),
+    total_decisions_imported: scopeReports.reduce((sum, scope) => sum + scope.decisions_imported, 0),
+    total_decisions_skipped: scopeReports.reduce((sum, scope) => sum + scope.decisions_skipped, 0),
     total_warnings: scanWarnings.length + scopeReports.reduce((sum, scope) => sum + scope.warnings.length, 0),
+    bucket_totals: bucketTotals,
+    diagnostics_summary: diagnosticsSummary,
     scan_warnings: scanWarnings,
     scope_reports: scopeReports,
   };

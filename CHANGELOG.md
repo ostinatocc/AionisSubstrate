@@ -7,6 +7,7 @@ All notable changes to Aionis Substrate are documented here.
 ### Added
 
 - Runtime Lite snapshot import summaries now expose structured source-table, skip-reason, and JSON issue diagnostics.
+- Runtime snapshot corpus reports now aggregate bucket totals plus node, relation, feedback, decision, source-table, skip-reason, and JSON issue matrix diagnostics.
 
 ## 0.1.2 - 2026-06-26
 

@@ -203,7 +203,7 @@ npm run check:runtime-corpus -- \
   --max-scopes-per-file 3
 ```
 
-This scans Runtime Lite SQLite files read-only, imports selected scopes into temporary Substrate stores, and writes an aggregate report under `reports/runtime-snapshot-corpus-*`.
+This scans Runtime Lite SQLite files read-only, imports selected scopes into temporary Substrate stores, and writes an aggregate matrix report under `reports/runtime-snapshot-corpus-*`. The report includes bucket totals, node/relation/feedback/decision coverage, source-table presence, skip reasons, and Runtime JSON issues.
 
 Runtime reference corpus parity:
 
