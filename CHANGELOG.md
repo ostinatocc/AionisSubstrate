@@ -12,6 +12,7 @@ All notable changes to Aionis Substrate are documented here.
 - Runtime Zvec candidate-index validation gate that imports real Runtime Lite SQLite scopes into isolated Substrate stores and checks Zvec health plus canonical-search parity.
 - Zvec scale-maintenance gate that writes a SQLite truth store with a Zvec candidate sidecar, verifies write-through health, wide-search parity, narrow seeded recovery, lifecycle-transition sync, compaction, and reopen rebuild.
 - Provider-backed Zvec embedding eval that calls OpenAI-compatible or MiniMax native embeddings endpoints and reports raw Zvec candidate hit rate separately from final Substrate search hit rate.
+- Candidate-index semantic fusion that lets Zvec/provider candidates influence final `searchNodes()` ranking without bypassing scope, lifecycle, authority, confidence, or target-file filters.
 
 ## 0.1.4 - 2026-06-26
 

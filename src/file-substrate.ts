@@ -10,7 +10,7 @@ import {
   snapshotFromReplayState,
   type AionisReplayState,
 } from "./event-log.ts";
-import { searchMemoryNodes } from "./search.ts";
+import { searchMemoryNodes, type AionisMemorySearchCandidateMatch } from "./search.ts";
 import type { AionisCandidateIndex } from "./candidate-index.ts";
 import type {
   AionisAdmissionAction,
@@ -190,23 +190,32 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
     const indexLimit = input.candidateLimit ?? Math.max(input.limit ?? 50, 200);
     const candidates = await candidateIndex.search({ ...input, limit: indexLimit });
     if (candidates === null) return searchMemoryNodes(Array.from(state.nodes.values()), input);
-    const candidateKeys = new Set(candidates.map((candidate) => eventKey(candidate.scope, candidate.memoryId)));
-    const candidateReasons = new Map(candidates.map((candidate) => [
-      eventKey(candidate.scope, candidate.memoryId),
-      candidate.reasons,
-    ]));
-    const nodes = Array.from(state.nodes.values()).filter((node) => candidateKeys.has(eventKey(node.scope, node.id)));
-    return searchMemoryNodes(nodes, input).map((result) => ({
-      ...result,
-      reasons: [
-        {
-          code: "candidate_index_match",
-          detail: "node was selected by the configured candidate index before substrate scoring",
-        },
-        ...(candidateReasons.get(eventKey(result.node.scope, result.node.id)) ?? []),
-        ...result.reasons,
-      ],
-    }));
+    const candidateMatches = new Map<string, AionisMemorySearchCandidateMatch>();
+    candidates.forEach((candidate, index) => {
+      candidateMatches.set(eventKey(candidate.scope, candidate.memoryId), {
+        score: candidate.score,
+        rank: index + 1,
+        total: candidates.length,
+        reasons: [
+          {
+            code: "candidate_index_match",
+            detail: "node was selected by the configured candidate index before substrate scoring",
+          },
+          ...candidate.reasons,
+        ],
+      });
+    });
+    const allNodes = Array.from(state.nodes.values());
+    const lexicalSafetyLimit = Math.max(input.limit ?? 50, Math.min(indexLimit, 50));
+    const lexicalSafetyResults = input.query?.trim()
+      ? searchMemoryNodes(allNodes, { ...input, candidateMatches: undefined, limit: lexicalSafetyLimit })
+      : [];
+    const searchKeys = new Set([
+      ...candidates.map((candidate) => eventKey(candidate.scope, candidate.memoryId)),
+      ...lexicalSafetyResults.map((result) => eventKey(result.node.scope, result.node.id)),
+    ]);
+    const nodes = allNodes.filter((node) => searchKeys.has(eventKey(node.scope, node.id)));
+    return searchMemoryNodes(nodes, { ...input, candidateMatches });
   }
 
   function reasonsFor(node: AionisMemoryNode): { action: AionisAdmissionAction; reasons: AionisDecisionReason[] } {

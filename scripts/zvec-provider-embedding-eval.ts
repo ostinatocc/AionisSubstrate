@@ -561,6 +561,11 @@ function hitAt(ids: string[], expectedId: string, k: number): boolean {
   return ids.slice(0, k).includes(expectedId);
 }
 
+function rankOf(ids: string[], expectedId: string): number | null {
+  const index = ids.indexOf(expectedId);
+  return index < 0 ? null : index + 1;
+}
+
 function rate(numerator: number, denominator: number): number {
   return denominator === 0 ? 0 : numerator / denominator;
 }
@@ -678,6 +683,26 @@ async function main(): Promise<void> {
       },
       zvec_health: health,
       embedding_usage: client.usage,
+      probe_results: rawCandidateResults.map((item) => {
+        const final = indexedFinalResults.find((row) => row.expectedId === item.expectedId);
+        const lexical = lexicalResults.find((row) => row.expectedId === item.expectedId);
+        const finalIds = final?.finalIds ?? [];
+        const lexicalIds = lexical?.lexicalIds ?? [];
+        return {
+          scope: item.scope,
+          expected_id: item.expectedId,
+          query: item.query,
+          raw_candidate_rank: rankOf(item.rawCandidateIds, item.expectedId),
+          final_substrate_rank: rankOf(finalIds, item.expectedId),
+          lexical_substrate_rank: rankOf(lexicalIds, item.expectedId),
+          raw_candidate_hit: item.rawCandidateIds.includes(item.expectedId),
+          final_substrate_hit: finalIds.includes(item.expectedId),
+          lexical_substrate_hit: lexicalIds.includes(item.expectedId),
+          raw_candidate_ids: item.rawCandidateIds,
+          final_substrate_ids: finalIds,
+          lexical_substrate_ids: lexicalIds,
+        };
+      }),
       samples: rawCandidateResults.slice(0, 12).map((item) => {
         const final = indexedFinalResults.find((row) => row.expectedId === item.expectedId);
         const lexical = lexicalResults.find((row) => row.expectedId === item.expectedId);

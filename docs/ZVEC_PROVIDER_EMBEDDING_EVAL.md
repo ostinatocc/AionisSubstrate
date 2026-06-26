@@ -136,6 +136,7 @@ Important fields:
 - `raw_zvec_candidate_topk_rate`: whether the expected memory id entered the candidate window.
 - `final_substrate_topk_rate`: current end-to-end `searchNodes()` output after canonical Substrate scoring.
 - `lexical_substrate_topk_rate`: canonical deterministic search without Zvec.
+- `probe_results`: per-query raw candidate rank, final rank, lexical rank, and returned ids for miss analysis.
 - `embedding_usage`: provider requests, embedded text count, input character count, provider token count when exposed, and failed request count.
 - `zvec_health`: missing, orphan, and stale sidecar diagnostics.
 
@@ -145,3 +146,10 @@ The provider eval is intentionally strict about this distinction. A low final
 Substrate hit rate can happen even when provider vectors are valid if the Zvec
 candidate window excludes the expected id or if the final canonical scorer
 prefers lexical/structured evidence over semantic candidates.
+
+Substrate fuses candidate-index evidence into final `searchNodes()` ranking by
+adding auditable `semantic_candidate_fusion` reasons and preserving a small
+semantic recall floor for top-ranked candidates. This only changes ranking after
+normal scope, lifecycle, authority, confidence, team, agent, and target-file
+filters pass. Zvec still remains a sidecar candidate preselector; file/SQLite
+stores remain the truth store.

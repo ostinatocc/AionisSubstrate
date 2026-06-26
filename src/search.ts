@@ -7,6 +7,17 @@ import type {
 
 const MAX_DEFAULT_RESULTS = 50;
 
+export type AionisMemorySearchCandidateMatch = {
+  score: number;
+  rank: number;
+  total: number;
+  reasons: AionisMemorySearchReason[];
+};
+
+export type AionisMemorySearchInternalInput = AionisMemorySearchInput & {
+  candidateMatches?: Map<string, AionisMemorySearchCandidateMatch>;
+};
+
 function normalizeText(value: string): string {
   return value.toLowerCase().normalize("NFKC");
 }
@@ -93,7 +104,70 @@ function queryScore(node: AionisMemoryNode, query: string | null | undefined): {
   };
 }
 
-export function searchMemoryNodes(nodes: AionisMemoryNode[], input: AionisMemorySearchInput): AionisMemorySearchResult[] {
+function candidateBonus(candidate: AionisMemorySearchCandidateMatch): number {
+  const score = Math.max(0, Math.min(1, candidate.score));
+  const total = Math.max(1, candidate.total);
+  const rank = Math.max(1, candidate.rank);
+  const rankBonus = Math.max(0, 1 - ((rank - 1) / total));
+  return 1 + (score * 4) + (rankBonus * 8);
+}
+
+function memoryKey(scope: string, id: string): string {
+  return `${scope}\u0000${id}`;
+}
+
+function applySemanticRecallFloor(results: AionisMemorySearchResult[], input: AionisMemorySearchInternalInput, limit: number): AionisMemorySearchResult[] {
+  if (!input.candidateMatches || results.length <= limit) return results.slice(0, limit);
+  const floorCount = Math.min(limit, Math.max(1, Math.ceil(limit * 0.2)));
+  const topCandidateKeys = new Set(
+    Array.from(input.candidateMatches.entries())
+      .sort(([, a], [, b]) => a.rank - b.rank || b.score - a.score)
+      .slice(0, floorCount)
+      .map(([key]) => key),
+  );
+  if (topCandidateKeys.size === 0) return results.slice(0, limit);
+
+  const selected = results.slice(0, limit);
+  const selectedKeys = new Set(selected.map((result) => memoryKey(result.node.scope, result.node.id)));
+  const missingFloorResults = results
+    .filter((result) => topCandidateKeys.has(memoryKey(result.node.scope, result.node.id)) && !selectedKeys.has(memoryKey(result.node.scope, result.node.id)))
+    .sort((a, b) => {
+      const aCandidate = input.candidateMatches?.get(memoryKey(a.node.scope, a.node.id));
+      const bCandidate = input.candidateMatches?.get(memoryKey(b.node.scope, b.node.id));
+      return (aCandidate?.rank ?? Number.MAX_SAFE_INTEGER) - (bCandidate?.rank ?? Number.MAX_SAFE_INTEGER);
+    });
+  if (missingFloorResults.length === 0) return selected;
+
+  const replaceableResults = selected.filter((result) => !topCandidateKeys.has(memoryKey(result.node.scope, result.node.id)));
+  for (const candidate of missingFloorResults) {
+    if (replaceableResults.length === 0) break;
+    const removed = replaceableResults.pop();
+    if (!removed) break;
+    const index = selected.findIndex((result) => result.node.scope === removed.node.scope && result.node.id === removed.node.id);
+    if (index < 0) continue;
+    selected[index] = {
+      ...candidate,
+      reasons: [
+        {
+          code: "semantic_recall_floor",
+          detail: `kept top semantic candidate within final top ${limit}`,
+        },
+        ...candidate.reasons,
+      ],
+    };
+  }
+  return selected
+    .sort((a, b) => {
+      const byScore = b.score - a.score;
+      if (byScore !== 0) return byScore;
+      const byTime = b.node.updatedAt.localeCompare(a.node.updatedAt);
+      if (byTime !== 0) return byTime;
+      return a.node.id.localeCompare(b.node.id);
+    })
+    .slice(0, limit);
+}
+
+export function searchMemoryNodes(nodes: AionisMemoryNode[], input: AionisMemorySearchInternalInput): AionisMemorySearchResult[] {
   const scope = input.scope.trim();
   if (!scope) throw new Error("scope is required");
   const limit = input.limit === undefined ? MAX_DEFAULT_RESULTS : input.limit;
@@ -120,12 +194,20 @@ export function searchMemoryNodes(nodes: AionisMemoryNode[], input: AionisMemory
     if (input.updatedBefore !== undefined && compareIso(node.updatedAt, input.updatedBefore) > 0) continue;
     if (!hasAnyTargetFile(node, targetFiles)) continue;
 
+    const candidate = input.candidateMatches?.get(memoryKey(node.scope, node.id)) ?? null;
     const query = queryScore(node, input.query);
-    if (query === null) continue;
+    if (query === null && candidate === null) continue;
 
     const reasons: AionisMemorySearchReason[] = [
       { code: "scope_match", detail: `scope=${scope}` },
-      ...query.reasons,
+      ...(candidate === null ? [] : [
+        {
+          code: "semantic_candidate_fusion",
+          detail: `candidate_rank=${candidate.rank}/${candidate.total}, candidate_score=${candidate.score.toFixed(6)}`,
+        },
+        ...candidate.reasons,
+      ]),
+      ...(query?.reasons ?? []),
     ];
     if (kindFilter) reasons.push({ code: "kind_filter", detail: `kind=${node.kind}` });
     if (lifecycleFilter) reasons.push({ code: "lifecycle_filter", detail: `lifecycle=${node.lifecycle}` });
@@ -135,17 +217,16 @@ export function searchMemoryNodes(nodes: AionisMemoryNode[], input: AionisMemory
     if (input.teamId !== undefined) reasons.push({ code: "team_filter", detail: `teamId=${String(input.teamId)}` });
     if (input.minConfidence !== undefined) reasons.push({ code: "confidence_filter", detail: `confidence>=${input.minConfidence}` });
 
-    const score = query.score + node.confidence;
+    const score = (query?.score ?? 0) + node.confidence + (candidate === null ? 0 : candidateBonus(candidate));
     results.push({ node, score, reasons });
   }
 
-  return results
-    .sort((a, b) => {
+  const sorted = results.sort((a, b) => {
       const byScore = b.score - a.score;
       if (byScore !== 0) return byScore;
       const byTime = b.node.updatedAt.localeCompare(a.node.updatedAt);
       if (byTime !== 0) return byTime;
       return a.node.id.localeCompare(b.node.id);
-    })
-    .slice(0, limit);
+    });
+  return applySemanticRecallFloor(sorted, input, limit);
 }

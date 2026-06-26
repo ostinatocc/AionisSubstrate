@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { applyAionisEvent, checksumAionisEvents, emptyReplayState } from "./event-log.ts";
-import { searchMemoryNodes } from "./search.ts";
+import { searchMemoryNodes, type AionisMemorySearchCandidateMatch } from "./search.ts";
 import type { AionisCandidateIndex } from "./candidate-index.ts";
 import { AIONIS_SUBSTRATE_SCHEMA_VERSION as CURRENT_SCHEMA_VERSION } from "./types.ts";
 import type {
@@ -717,26 +717,33 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
         return searchMemoryNodes(nodes, input);
       });
     }
-    const candidateKeys = new Set(candidates.map((candidate) => `${candidate.scope}\u0000${candidate.memoryId}`));
-    const candidateReasons = new Map(candidates.map((candidate) => [
-      `${candidate.scope}\u0000${candidate.memoryId}`,
-      candidate.reasons,
-    ]));
-    return await enqueue(() => {
-      const nodes = (db.prepare("SELECT * FROM memory_nodes WHERE scope = ?").all(input.scope) as SqliteMemoryNodeRow[])
-        .map(rowToNode)
-        .filter((node) => candidateKeys.has(`${node.scope}\u0000${node.id}`));
-      return searchMemoryNodes(nodes, input).map((result) => ({
-        ...result,
+    const candidateMatches = new Map<string, AionisMemorySearchCandidateMatch>();
+    candidates.forEach((candidate, index) => {
+      candidateMatches.set(`${candidate.scope}\u0000${candidate.memoryId}`, {
+        score: candidate.score,
+        rank: index + 1,
+        total: candidates.length,
         reasons: [
           {
             code: "candidate_index_match",
             detail: "node was selected by the configured candidate index before substrate scoring",
           },
-          ...(candidateReasons.get(`${result.node.scope}\u0000${result.node.id}`) ?? []),
-          ...result.reasons,
+          ...candidate.reasons,
         ],
-      }));
+      });
+    });
+    return await enqueue(() => {
+      const allNodes = (db.prepare("SELECT * FROM memory_nodes WHERE scope = ?").all(input.scope) as SqliteMemoryNodeRow[]).map(rowToNode);
+      const lexicalSafetyLimit = Math.max(input.limit ?? 50, Math.min(indexLimit, 50));
+      const lexicalSafetyResults = input.query?.trim()
+        ? searchMemoryNodes(allNodes, { ...input, candidateMatches: undefined, limit: lexicalSafetyLimit })
+        : [];
+      const searchKeys = new Set([
+        ...candidates.map((candidate) => `${candidate.scope}\u0000${candidate.memoryId}`),
+        ...lexicalSafetyResults.map((result) => `${result.node.scope}\u0000${result.node.id}`),
+      ]);
+      const nodes = allNodes.filter((node) => searchKeys.has(`${node.scope}\u0000${node.id}`));
+      return searchMemoryNodes(nodes, { ...input, candidateMatches });
     });
   }
 
