@@ -73,6 +73,29 @@ npm run check:zvec-provider-embedding -- \
   --model provider-embedding-model
 ```
 
+For Alibaba Cloud DashScope `text-embedding-v4` through the OpenAI-compatible
+endpoint:
+
+```bash
+AIONIS_EMBEDDING_PROVIDER=openai \
+AIONIS_EMBEDDING_API_KEY=... \
+AIONIS_EMBEDDING_MODEL=text-embedding-v4 \
+npm run check:zvec-provider-embedding -- \
+  --base-url https://dashscope.aliyuncs.com/compatible-mode/v1 \
+  --endpoint /embeddings \
+  --dimensions 1024 \
+  --batch-size 10 \
+  --nodes 240 \
+  --scopes 4 \
+  --queries 20 \
+  --candidate-limit 40
+```
+
+DashScope `text-embedding-v4` accepts small batches on this endpoint, so the
+example uses `--batch-size 10`. In the current provider eval, `--candidate-limit
+40` is a better first setting than `20` because it lets Zvec act as a semantic
+candidate preselector without prematurely excluding lexical matches.
+
 For MiniMax:
 
 ```bash
