@@ -4,6 +4,8 @@ All notable changes to Aionis Substrate are documented here.
 
 ## Unreleased
 
+## 0.1.3 - 2026-06-26
+
 ### Added
 
 - Runtime Lite snapshot import summaries now expose structured source-table, skip-reason, and JSON issue diagnostics.

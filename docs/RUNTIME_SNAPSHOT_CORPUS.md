@@ -75,21 +75,21 @@ Result on 2026-06-26:
 - discovered SQLite files: 30
 - Runtime SQLite files: 14
 - candidate scopes: 128
-- attempted scopes: 100
-- passed scopes: 100
+- attempted scopes: 128
+- passed scopes: 128
 - failed scopes: 0
-- Runtime nodes read: 8,948
-- Runtime nodes imported: 8,848
-- Runtime nodes skipped: 100
+- Runtime nodes read: 9,069
+- Runtime nodes imported: 8,941
+- Runtime nodes skipped: 128
 - relation rows skipped: 0
 - feedback rows skipped: 0
 - decision rows skipped: 0
-- bucket totals: `use_now=100`, `inspect_before_use=3,778`, `do_not_use=26`, `rehydrate=0`
-- source table coverage: `lite_memory_nodes=100/100`, `lite_memory_edges=100/100`, `lite_memory_execution_native_index=40/100`, `lite_memory_rule_feedback=100/100`, `lite_memory_execution_decisions=100/100`
-- skip reason totals: `not_agent_facing=100`, all other skip reasons `0`
+- bucket totals: `use_now=128`, `inspect_before_use=3,789`, `do_not_use=80`, `rehydrate=0`
+- source table coverage: `lite_memory_nodes=128/128`, `lite_memory_edges=128/128`, `lite_memory_execution_native_index=41/128`, `lite_memory_rule_feedback=128/128`, `lite_memory_execution_decisions=128/128`
+- skip reason totals: `not_agent_facing=128`, all other skip reasons `0`
 - JSON issues: 0
-- warnings: 100, all from intentionally skipped non-agent-facing Runtime nodes
+- warnings: 128, all from intentionally skipped non-agent-facing Runtime nodes
 
 Local report:
 
-`reports/runtime-snapshot-corpus-2026-06-26T08-19-45-872Z/summary.json`
+`reports/runtime-snapshot-corpus-2026-06-26T09-00-03-229Z/summary.json`
