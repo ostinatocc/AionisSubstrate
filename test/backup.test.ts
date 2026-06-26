@@ -15,6 +15,7 @@ import {
   type AionisSubstrate,
   type AionisSubstrateBackup,
 } from "../src/index.ts";
+import { checksumAionisEvents } from "../src/event-log.ts";
 
 async function withTempDir<T>(prefix: string, fn: (dir: string) => Promise<T>): Promise<T> {
   const dir = await mkdtemp(join(tmpdir(), prefix));
@@ -157,6 +158,37 @@ test("backup restore rejects tampered events and non-empty targets", async () =>
     await assert.rejects(
       restoreAionisSubstrateBackupToSqlite(backup, sqliteTarget),
       /restore target SQLite store already exists/,
+    );
+
+    await source.close();
+  });
+});
+
+test("backup integrity rejects decision traces that reference missing memory nodes", async () => {
+  await withTempDir("aionis-substrate-backup-decision-negative-", async (dir) => {
+    const source = await openFileAionisSubstrate({ dir: join(dir, "source") });
+    await seedStore(source);
+    const backup = await exportAionisSubstrateBackup(source);
+
+    const corrupt: AionisSubstrateBackup = JSON.parse(JSON.stringify(backup)) as AionisSubstrateBackup;
+    const decisionEvent = corrupt.events.find((event) => event.type === "memory.decision.recorded");
+    if (decisionEvent?.type !== "memory.decision.recorded") throw new Error("expected decision event");
+    decisionEvent.payload.decisions[0] = {
+      ...decisionEvent.payload.decisions[0]!,
+      memoryId: "missing-decision-target",
+    };
+    corrupt.checksum.eventsSha256 = checksumAionisEvents(corrupt.events);
+
+    const integrity = verifyAionisSubstrateBackup(corrupt);
+    assert.equal(integrity.ok, false);
+    assert.match(integrity.errors.join("\n"), /cannot record decision for missing memory node: missing-decision-target/);
+    await assert.rejects(
+      restoreAionisSubstrateBackupToFile(corrupt, join(dir, "corrupt-decision-file")),
+      /cannot record decision for missing memory node: missing-decision-target/,
+    );
+    await assert.rejects(
+      restoreAionisSubstrateBackupToSqlite(corrupt, join(dir, "corrupt-decision.sqlite")),
+      /cannot record decision for missing memory node: missing-decision-target/,
     );
 
     await source.close();

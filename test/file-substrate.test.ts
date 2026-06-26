@@ -322,7 +322,7 @@ test("failed lifecycle transition does not persist a corrupt event", async () =>
   });
 });
 
-test("failed relation and feedback writes do not persist corrupt events", async () => {
+test("failed relation, feedback, and decision writes do not persist corrupt events", async () => {
   await withStore(async (dir) => {
     const store = await openFileAionisSubstrate({ dir });
     await store.putNode({
@@ -362,16 +362,29 @@ test("failed relation and feedback writes do not persist corrupt events", async 
       }),
       /cannot record feedback for missing memory node: missing-feedback-target/,
     );
+    await assert.rejects(
+      store.recordDecision({
+        scope: "repo-a",
+        decisions: [{
+          memoryId: "missing-decision-target",
+          action: "use_now",
+          reasons: [{ code: "bad_ref", detail: "should not be written" }],
+        }],
+      }),
+      /cannot record decision for missing memory node: missing-decision-target/,
+    );
 
     const eventLog = await readFile(join(dir, "events.jsonl"), "utf8");
     assert.equal(eventLog.trim().split("\n").length, 1);
     assert.equal((await store.listRelations("repo-a")).length, 0);
+    assert.equal((await store.listDecisions("repo-a")).length, 0);
     assert.equal((await store.listEvents()).length, 1);
 
     await store.close();
     const reopened = await openFileAionisSubstrate({ dir });
     assert.equal((await reopened.listEvents()).length, 1);
     assert.equal((await reopened.listRelations("repo-a")).length, 0);
+    assert.equal((await reopened.listDecisions("repo-a")).length, 0);
     assert.equal((await reopened.getNode("repo-a", "existing"))?.id, "existing");
   });
 });

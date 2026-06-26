@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
@@ -11,6 +11,7 @@ import {
   restoreAionisSubstrateBackupToSqlite,
   verifyAionisSubstrateBackup,
   type AionisCompiledContext,
+  type AionisEvent,
   type AionisSubstrate,
 } from "../src/index.ts";
 
@@ -81,6 +82,45 @@ function assertScenarioContext(context: AionisCompiledContext): void {
   assert.deepEqual(context.rehydrate.map((node) => node.id), ["raw-trace"]);
 }
 
+async function assertPostCheckpointInvalidWritesStayAtomic(store: AionisSubstrate): Promise<void> {
+  const beforeEvents = await store.listEvents();
+  assert.equal(beforeEvents.length, 1);
+  await assert.rejects(
+    store.putRelation({
+      scope: "repo-a",
+      kind: "supports",
+      sourceId: "missing-source",
+      targetId: "current-route",
+      reasons: ["should not be written"],
+    }),
+    /cannot relate missing source memory node: missing-source/,
+  );
+  await assert.rejects(
+    store.recordFeedback({
+      scope: "repo-a",
+      memoryId: "missing-feedback-target",
+      outcome: "negative",
+      strength: "weak",
+    }),
+    /cannot record feedback for missing memory node: missing-feedback-target/,
+  );
+  await assert.rejects(
+    store.recordDecision({
+      scope: "repo-a",
+      decisions: [{
+        memoryId: "missing-decision-target",
+        action: "use_now",
+        reasons: [{ code: "bad_ref", detail: "should not be written" }],
+      }],
+    }),
+    /cannot record decision for missing memory node: missing-decision-target/,
+  );
+
+  const afterEvents = await store.listEvents();
+  assert.deepEqual(afterEvents.map((event) => event.id), beforeEvents.map((event) => event.id));
+  assert.deepEqual(afterEvents.map((event) => event.sequence), beforeEvents.map((event) => event.sequence));
+}
+
 test("file adapter compacts event history into a checkpoint without changing governed state", async () => {
   await withTempDir("aionis-substrate-file-compact-", async (dir) => {
     const store = await openFileAionisSubstrate({ dir });
@@ -129,6 +169,7 @@ test("file adapter compacts event history into a checkpoint without changing gov
       lastSequence: 1,
       eventCount: 1,
     });
+    await assertPostCheckpointInvalidWritesStayAtomic(reopened);
     await reopened.putNode({
       id: "post-compact",
       scope: "repo-a",
@@ -137,6 +178,29 @@ test("file adapter compacts event history into a checkpoint without changing gov
     });
     assert.equal((await reopened.listEvents()).at(-1)?.sequence, 2);
     await reopened.close();
+  });
+});
+
+test("file adapter rejects a compacted checkpoint with corrupt decision references", async () => {
+  await withTempDir("aionis-substrate-file-compact-corrupt-decision-", async (dir) => {
+    const store = await openFileAionisSubstrate({ dir });
+    assertScenarioContext(await seedCompactionScenario(store));
+    await store.compact();
+    await store.close();
+
+    const eventsPath = join(dir, "events.jsonl");
+    const checkpoint = JSON.parse((await readFile(eventsPath, "utf8")).trim()) as AionisEvent;
+    if (checkpoint.type !== "substrate.checkpoint.created") throw new Error("expected checkpoint event");
+    checkpoint.payload.state.decisions[0]!.decisions[0] = {
+      ...checkpoint.payload.state.decisions[0]!.decisions[0]!,
+      memoryId: "missing-decision-target",
+    };
+    await writeFile(eventsPath, `${JSON.stringify(checkpoint)}\n`, "utf8");
+
+    await assert.rejects(
+      openFileAionisSubstrate({ dir }),
+      /checkpoint decision references missing memory node: missing-decision-target/,
+    );
   });
 });
 
@@ -172,6 +236,7 @@ test("sqlite adapter compacts event history into a checkpoint without changing g
       lastSequence: 1,
       eventCount: 1,
     });
+    await assertPostCheckpointInvalidWritesStayAtomic(store);
     await store.putNode({
       id: "post-compact",
       scope: "repo-a",

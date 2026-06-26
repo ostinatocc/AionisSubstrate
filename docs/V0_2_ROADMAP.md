@@ -44,6 +44,8 @@ Extend failure-mode coverage:
 - relation and feedback edge cases after compaction;
 - checkpoint reopen after mixed read/write traffic.
 
+Initial implementation status: decision trace references are validated like relation and feedback references. File and SQLite adapters reject missing decision targets before persisting events or rows; backup verification rejects checksum-valid orphan decision receipts; checkpoint reopen rejects corrupt decision references; post-checkpoint invalid relation, feedback, and decision writes stay atomic.
+
 ### 4. Runtime Sidecar Stabilization
 
 Keep Runtime experiments isolated:

@@ -80,6 +80,7 @@ function validateCheckpointState(
   nodes: AionisMemoryNode[],
   relations: AionisRelation[],
   feedback: AionisFeedback[],
+  decisions: AionisDecisionTrace[],
 ): void {
   const nodeKeys = new Set(nodes.map((node) => eventKey(node.scope, node.id)));
   for (const relation of relations) {
@@ -93,6 +94,25 @@ function validateCheckpointState(
   for (const item of feedback) {
     if (!nodeKeys.has(eventKey(item.scope, item.memoryId))) {
       throw new Error(`checkpoint feedback references missing memory node: ${item.memoryId}`);
+    }
+  }
+  for (const trace of decisions) {
+    validateDecisionTraceReferences(
+      trace,
+      (scope, memoryId) => nodeKeys.has(eventKey(scope, memoryId)),
+      (memoryId) => `checkpoint decision references missing memory node: ${memoryId}`,
+    );
+  }
+}
+
+function validateDecisionTraceReferences(
+  trace: AionisDecisionTrace,
+  hasNode: (scope: string, memoryId: string) => boolean,
+  missingMessage: (memoryId: string) => string,
+): void {
+  for (const decision of trace.decisions) {
+    if (!hasNode(trace.scope, decision.memoryId)) {
+      throw new Error(missingMessage(decision.memoryId));
     }
   }
 }
@@ -109,7 +129,12 @@ export function applyAionisEvent(state: AionisReplayState, event: AionisEvent): 
     if (event.payload.schemaVersion !== AIONIS_SUBSTRATE_SCHEMA_VERSION) {
       throw new Error(`unsupported checkpoint schema version: ${event.payload.schemaVersion}`);
     }
-    validateCheckpointState(event.payload.state.nodes, event.payload.state.relations, event.payload.state.feedback);
+    validateCheckpointState(
+      event.payload.state.nodes,
+      event.payload.state.relations,
+      event.payload.state.feedback,
+      event.payload.state.decisions,
+    );
     state.nodes = new Map(event.payload.state.nodes.map((node) => [eventKey(node.scope, node.id), node]));
     state.relations = new Map(event.payload.state.relations.map((relation) => [eventKey(relation.scope, relation.id), relation]));
     state.feedback = new Map(event.payload.state.feedback.map((item) => [eventKey(item.scope, item.id), item]));
@@ -148,6 +173,11 @@ export function applyAionisEvent(state: AionisReplayState, event: AionisEvent): 
     state.feedback.set(eventKey(feedback.scope, feedback.id), feedback);
   } else if (event.type === "memory.decision.recorded") {
     const decision = event.payload;
+    validateDecisionTraceReferences(
+      decision,
+      (scope, memoryId) => state.nodes.has(eventKey(scope, memoryId)),
+      (memoryId) => `cannot record decision for missing memory node: ${memoryId}`,
+    );
     state.decisions.set(eventKey(decision.scope, decision.id), decision);
   } else {
     throw new Error(`unsupported event type: ${(event as { type?: string }).type}`);

@@ -649,6 +649,14 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
     `).run(trace.scope, trace.id, trace.query ?? null, stringify(trace.decisions), trace.createdAt);
   }
 
+  function validateDecisionTraceReferences(trace: AionisDecisionTrace): void {
+    for (const decision of trace.decisions) {
+      if (!getNodeSync(trace.scope, decision.memoryId)) {
+        throw new Error(`cannot record decision for missing memory node: ${decision.memoryId}`);
+      }
+    }
+  }
+
   function buildContext(input: { scope: string; query?: string | null; maxPerBucket?: number }): AionisCompiledContext {
     const maxPerBucket = input.maxPerBucket ?? Number.POSITIVE_INFINITY;
     const nodes = sortNodes((db.prepare("SELECT * FROM memory_nodes WHERE scope = ?").all(input.scope) as SqliteMemoryNodeRow[]).map(rowToNode));
@@ -884,6 +892,7 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
           decisions: input.decisions,
           createdAt: input.createdAt ?? isoNow(),
         };
+        validateDecisionTraceReferences(trace);
         appendEvent("memory.decision.recorded", trace.createdAt, trace);
         insertDecisionRow(trace);
         return trace;

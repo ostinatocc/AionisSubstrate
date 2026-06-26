@@ -9,11 +9,13 @@ All notable changes to Aionis Substrate are documented here.
 - v0.2 roadmap that freezes Substrate hardening scope and excludes Runtime policy, vector recall, Agent harnesses, and SaaS concerns.
 - Scoped audit read APIs for relations, feedback, and decision receipts.
 - SQLite schema migration registry with durable applied-migration records.
+- Durability negative controls for orphan decision receipts, checksum-valid corrupt backups, and post-compaction invalid writes.
 
 ### Changed
 
 - Documented audit reads as side-effect-free adapter parity surfaces.
 - Documented SQLite migrations as explicit adapter-scoped schema changes.
+- Decision traces now require every decision memory id to reference an existing node in the same scope.
 
 ## 0.1.0 - 2026-06-26
 

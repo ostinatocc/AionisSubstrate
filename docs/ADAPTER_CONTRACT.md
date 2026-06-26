@@ -33,6 +33,7 @@ Examples:
 - lifecycle transition for a missing memory node must fail without appending an event;
 - relation with a missing source or target must fail without appending an event;
 - feedback for a missing memory node must fail without appending an event.
+- decision trace for a missing memory node must fail without appending an event.
 
 The file adapter validates against a cloned state before appending to `events.jsonl`.
 
@@ -130,7 +131,7 @@ Restore must verify:
 - supported backup and schema version;
 - contiguous event sequence;
 - duplicate event ids;
-- event reference integrity;
+- event reference integrity, including decision trace memory ids;
 - header event counts;
 - SHA-256 checksum.
 
@@ -143,6 +144,7 @@ The test suite currently checks:
 - failed lifecycle transition does not corrupt the file event log;
 - failed relation writes do not persist corrupt events or partial rows;
 - failed feedback writes do not persist corrupt events or partial rows;
+- failed decision writes do not persist corrupt events or partial rows;
 - file and SQLite adapters compile identical buckets for the same evidence;
 - superseded memory is blocked from direct use;
 - archived evidence becomes a rehydrate hook;
@@ -152,7 +154,10 @@ The test suite currently checks:
 - store schema version is reported by both adapters;
 - SQLite schema metadata and migration ledger are persisted, backfilled for legacy v1 stores, and future unsupported schemas are rejected;
 - event-log backups verify checksums and restore to file and SQLite stores;
+- event-log backups reject checksum-valid decision traces that reference missing memory nodes;
 - checkpoint compaction preserves governed state and restarts future event sequences after the checkpoint;
+- compacted checkpoints reject corrupt decision references on reopen;
+- relation, feedback, and decision writes remain atomic after checkpoint compaction;
 - file and SQLite adapters return identical read-only search results for the same scoped query;
 - file and SQLite adapters return identical scoped audit reads without mutating event logs;
 - Runtime snapshot import opens source SQLite read-only.

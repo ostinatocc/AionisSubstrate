@@ -325,7 +325,7 @@ test("sqlite adapter keeps controlled forgetting as a durable lifecycle transiti
   });
 });
 
-test("sqlite adapter rolls back invalid relation and feedback writes without partial events", async () => {
+test("sqlite adapter rolls back invalid relation, feedback, and decision writes without partial events", async () => {
   await withSqlite(async (path) => {
     const store = await openSqliteAionisSubstrate({ path });
     await store.putNode({
@@ -365,19 +365,33 @@ test("sqlite adapter rolls back invalid relation and feedback writes without par
       }),
       /cannot record feedback for missing memory node: missing-feedback-target/,
     );
+    await assert.rejects(
+      store.recordDecision({
+        scope: "repo-a",
+        decisions: [{
+          memoryId: "missing-decision-target",
+          action: "use_now",
+          reasons: [{ code: "bad_ref", detail: "should not be written" }],
+        }],
+      }),
+      /cannot record decision for missing memory node: missing-decision-target/,
+    );
 
     assert.equal((await store.listEvents()).length, 1);
     assert.equal((await store.listRelations("repo-a")).length, 0);
+    assert.equal((await store.listDecisions("repo-a")).length, 0);
     await store.close();
 
     const db = new DatabaseSync(path, { readOnly: true });
     const eventCount = db.prepare("SELECT count(*) AS count FROM substrate_events").get() as { count: number };
     const relationCount = db.prepare("SELECT count(*) AS count FROM memory_relations").get() as { count: number };
     const feedbackCount = db.prepare("SELECT count(*) AS count FROM memory_feedback").get() as { count: number };
+    const decisionCount = db.prepare("SELECT count(*) AS count FROM decision_traces").get() as { count: number };
     db.close();
     assert.equal(eventCount.count, 1);
     assert.equal(relationCount.count, 0);
     assert.equal(feedbackCount.count, 0);
+    assert.equal(decisionCount.count, 0);
   });
 });
 

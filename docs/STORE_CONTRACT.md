@@ -50,6 +50,8 @@ Backups export the append-only event log plus schema metadata and a SHA-256 chec
 
 Restore must verify the backup before writing a target store. Restored stores preserve original event ids and sequence numbers, then rebuild derived read models.
 
+Backup verification must replay event reference integrity, including lifecycle targets, relation endpoints, feedback memory ids, and decision-trace memory ids.
+
 Payload files referenced by `payloadRef` are not embedded in the Substrate backup. They remain external artifacts and need their own retention policy.
 
 ### Checkpoint Compaction
@@ -158,6 +160,8 @@ Every compiled context must include a decision trace:
 - which reason code caused the decision
 - which relation caused the decision when applicable
 
+Every decision entry must reference a memory node that exists in the same scope as the trace. Decision traces are receipts over known substrate evidence; they cannot introduce orphan memory ids.
+
 The trace is for audit/debug/measure. It must not mutate admission by itself.
 
 `previewContext` is the side-effect-free admission preview. It returns the same bucket and reason-code shape as `compileContext`, but it must not append events or insert decision rows.
@@ -184,7 +188,8 @@ Every adapter must satisfy the same observable contract:
 6. Record decision traces as events.
 7. Return the same scoped audit reads from the same relation, feedback, and decision state.
 8. Reopen cleanly and recover the same read model.
-9. If compaction is supported, compact only through a validated checkpoint event.
+9. Reject corrupt lifecycle, relation, feedback, decision, and checkpoint references before persisting invalid events.
+10. If compaction is supported, compact only through a validated checkpoint event.
 
 Current adapters:
 
