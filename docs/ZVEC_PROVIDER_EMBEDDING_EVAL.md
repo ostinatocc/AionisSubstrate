@@ -11,7 +11,12 @@ This distinction matters. Zvec is a candidate sidecar, not the truth store and n
 
 ## Provider Contract
 
-The eval expects an OpenAI-compatible embeddings endpoint:
+The eval supports two provider contracts:
+
+- `openai`: OpenAI-compatible embeddings endpoints.
+- `minimax`: MiniMax native embeddings endpoint.
+
+### OpenAI-Compatible
 
 ```text
 POST <base-url><endpoint>
@@ -25,6 +30,25 @@ Content-Type: application/json
 ```
 
 The response must contain `data[].embedding` arrays in request order or with `data[].index`.
+
+### MiniMax Native
+
+MiniMax embeddings use a native request shape:
+
+```text
+POST <base-url><endpoint>
+Authorization: Bearer <api-key>
+Content-Type: application/json
+
+{
+  "model": "embo-01",
+  "type": "db",
+  "texts": ["document text one", "document text two"]
+}
+```
+
+The eval calls MiniMax with `type: "db"` for memory-node vectors and
+`type: "query"` for query vectors. The response must contain `vectors[]`.
 
 ## Run
 
@@ -49,10 +73,25 @@ npm run check:zvec-provider-embedding -- \
   --model provider-embedding-model
 ```
 
+For MiniMax:
+
+```bash
+AIONIS_EMBEDDING_PROVIDER=minimax \
+AIONIS_EMBEDDING_API_KEY=... \
+AIONIS_EMBEDDING_MODEL=embo-01 \
+npm run check:zvec-provider-embedding -- \
+  --base-url https://api.minimaxi.com/v1 \
+  --nodes 240 \
+  --scopes 4 \
+  --queries 20 \
+  --candidate-limit 20
+```
+
 The command writes a report under `reports/zvec-provider-embedding-*` unless `--output` is supplied.
 
 ## Options
 
+- `--provider <openai|minimax>`: embedding provider contract. Defaults to `AIONIS_EMBEDDING_PROVIDER` or `openai`.
 - `--base-url <url>`: provider base URL. Defaults to `AIONIS_EMBEDDING_BASE_URL` or `https://api.openai.com/v1`.
 - `--endpoint <path>`: embeddings endpoint. Defaults to `AIONIS_EMBEDDING_ENDPOINT` or `/embeddings`.
 - `--model <name>`: embedding model. Defaults to `AIONIS_EMBEDDING_MODEL`.
@@ -74,7 +113,12 @@ Important fields:
 - `raw_zvec_candidate_topk_rate`: whether the expected memory id entered the candidate window.
 - `final_substrate_topk_rate`: current end-to-end `searchNodes()` output after canonical Substrate scoring.
 - `lexical_substrate_topk_rate`: canonical deterministic search without Zvec.
-- `embedding_usage`: provider requests, embedded text count, input character count, and failed request count.
+- `embedding_usage`: provider requests, embedded text count, input character count, provider token count when exposed, and failed request count.
 - `zvec_health`: missing, orphan, and stale sidecar diagnostics.
 
 If raw Zvec hit rate is strong but final Substrate hit rate is weaker, the provider embeddings are finding useful candidates but the final canonical scorer is still acting as a lexical/structured gate. That is a search-contract boundary, not a provider failure.
+
+The provider eval is intentionally strict about this distinction. A low final
+Substrate hit rate can happen even when provider vectors are valid if the Zvec
+candidate window excludes the expected id or if the final canonical scorer
+prefers lexical/structured evidence over semantic candidates.

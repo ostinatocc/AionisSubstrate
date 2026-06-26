@@ -129,6 +129,7 @@ Runtime Zvec candidate-index validation is documented in [docs/RUNTIME_ZVEC_CAND
 Zvec scale and maintenance validation is documented in [docs/ZVEC_SCALE_MAINTENANCE.md](docs/ZVEC_SCALE_MAINTENANCE.md).
 
 Provider-backed Zvec embedding validation is documented in [docs/ZVEC_PROVIDER_EMBEDDING_EVAL.md](docs/ZVEC_PROVIDER_EMBEDDING_EVAL.md).
+The provider eval supports OpenAI-compatible embedding endpoints and MiniMax native embeddings for checking Zvec candidate preselection with real provider vectors.
 
 Runtime reference corpus parity is documented in [docs/RUNTIME_REFERENCE_CORPUS.md](docs/RUNTIME_REFERENCE_CORPUS.md).
 

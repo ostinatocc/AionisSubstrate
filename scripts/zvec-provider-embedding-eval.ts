@@ -14,6 +14,7 @@ import {
 } from "../src/index.ts";
 
 type EvalOptions = {
+  provider: EmbeddingProvider;
   baseUrl: string;
   endpoint: string;
   apiKeyVar: string;
@@ -50,12 +51,16 @@ type EmbeddingUsage = {
   embedded_texts: number;
   input_characters: number;
   failed_requests: number;
+  provider_total_tokens: number;
 };
 
 type IndexedStore = {
   store: AionisSubstrate;
   candidateIndex: AionisCandidateIndex;
 };
+
+type EmbeddingProvider = "openai" | "minimax";
+type EmbeddingPurpose = "db" | "query";
 
 const SEMANTIC_CASES: SemanticCase[] = [
   {
@@ -230,6 +235,12 @@ const SEMANTIC_CASES: SemanticCase[] = [
 
 type EmbeddingResponse = {
   data?: Array<{ embedding?: unknown; index?: number }>;
+  vectors?: unknown[];
+  total_tokens?: unknown;
+  base_resp?: {
+    status_code?: unknown;
+    status_msg?: unknown;
+  };
   usage?: unknown;
 };
 
@@ -254,7 +265,12 @@ function parseOptions(): EvalOptions {
   const model = readArg("model", process.env.AIONIS_EMBEDDING_MODEL);
   if (!model) throw new Error("--model or AIONIS_EMBEDDING_MODEL is required");
   const dimensionsRaw = readArg("dimensions", process.env.AIONIS_EMBEDDING_DIMENSIONS);
+  const providerRaw = readArg("provider", process.env.AIONIS_EMBEDDING_PROVIDER ?? "openai")!.toLowerCase();
+  if (providerRaw !== "openai" && providerRaw !== "minimax") {
+    throw new Error("--provider must be openai or minimax");
+  }
   return {
+    provider: providerRaw,
     baseUrl: readArg("base-url", process.env.AIONIS_EMBEDDING_BASE_URL ?? "https://api.openai.com/v1")!,
     endpoint: readArg("endpoint", process.env.AIONIS_EMBEDDING_ENDPOINT ?? "/embeddings")!,
     apiKeyVar: readArg("api-key-var", "AIONIS_EMBEDDING_API_KEY")!,
@@ -306,6 +322,7 @@ class EmbeddingClient {
     embedded_texts: 0,
     input_characters: 0,
     failed_requests: 0,
+    provider_total_tokens: 0,
   };
 
   constructor(options: EvalOptions) {
@@ -315,31 +332,30 @@ class EmbeddingClient {
     this.apiKey = apiKey;
   }
 
-  async embedTexts(texts: string[]): Promise<Map<string, number[]>> {
+  async embedTexts(texts: string[], purpose: EmbeddingPurpose): Promise<void> {
     const uniqueTexts = Array.from(new Set(texts.map((text) => text.trim()).filter(Boolean)));
     for (let index = 0; index < uniqueTexts.length; index += this.options.batchSize) {
-      const batch = uniqueTexts.slice(index, index + this.options.batchSize).filter((text) => !this.cache.has(text));
+      const batch = uniqueTexts.slice(index, index + this.options.batchSize).filter((text) => !this.cache.has(this.cacheKey(text, purpose)));
       if (batch.length === 0) continue;
-      const embeddings = await this.requestBatch(batch);
+      const embeddings = await this.requestBatch(batch, purpose);
       for (let itemIndex = 0; itemIndex < batch.length; itemIndex += 1) {
-        this.cache.set(batch[itemIndex], embeddings[itemIndex]);
+        this.cache.set(this.cacheKey(batch[itemIndex], purpose), embeddings[itemIndex]);
       }
     }
-    return this.cache;
   }
 
-  vectorFor(text: string): number[] {
-    const vector = this.cache.get(text.trim());
+  vectorFor(text: string, purpose: EmbeddingPurpose): number[] {
+    const vector = this.cache.get(this.cacheKey(text, purpose));
     if (!vector) throw new Error(`missing embedding for text: ${text.slice(0, 80)}`);
     return vector;
   }
 
-  private async requestBatch(texts: string[]): Promise<number[][]> {
-    const body: Record<string, unknown> = {
-      model: this.options.model,
-      input: texts,
-    };
-    if (this.options.dimensions !== undefined) body.dimensions = this.options.dimensions;
+  private cacheKey(text: string, purpose: EmbeddingPurpose): string {
+    return `${purpose}\0${text.trim()}`;
+  }
+
+  private async requestBatch(texts: string[], purpose: EmbeddingPurpose): Promise<number[][]> {
+    const body = this.requestBody(texts, purpose);
     this.usage.provider_requests += 1;
     this.usage.embedded_texts += texts.length;
     this.usage.input_characters += texts.reduce((sum, text) => sum + text.length, 0);
@@ -357,11 +373,48 @@ class EmbeddingClient {
       throw new Error(`embedding provider request failed: HTTP ${response.status} ${response.statusText}: ${text.slice(0, 500)}`);
     }
     const parsed = await response.json() as EmbeddingResponse;
-    if (!Array.isArray(parsed.data) || parsed.data.length !== texts.length) {
-      throw new Error(`embedding provider returned ${parsed.data?.length ?? 0} embeddings for ${texts.length} inputs`);
+    if (this.options.provider === "minimax") return this.parseMiniMaxResponse(parsed, texts.length);
+    return this.parseOpenAiCompatibleResponse(parsed, texts.length);
+  }
+
+  private requestBody(texts: string[], purpose: EmbeddingPurpose): Record<string, unknown> {
+    if (this.options.provider === "minimax") {
+      return {
+        model: this.options.model,
+        type: purpose,
+        texts,
+      };
+    }
+    const body: Record<string, unknown> = {
+      model: this.options.model,
+      input: texts,
+    };
+    if (this.options.dimensions !== undefined) body.dimensions = this.options.dimensions;
+    return body;
+  }
+
+  private parseOpenAiCompatibleResponse(parsed: EmbeddingResponse, expectedLength: number): number[][] {
+    if (!Array.isArray(parsed.data) || parsed.data.length !== expectedLength) {
+      throw new Error(`embedding provider returned ${parsed.data?.length ?? 0} embeddings for ${expectedLength} inputs`);
     }
     const rows = [...parsed.data].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
     return rows.map((row, index) => normalizeVector(row.embedding, `embedding ${index}`));
+  }
+
+  private parseMiniMaxResponse(parsed: EmbeddingResponse, expectedLength: number): number[][] {
+    const statusCode = parsed.base_resp?.status_code;
+    if (typeof statusCode === "number" && statusCode !== 0) {
+      const message = typeof parsed.base_resp?.status_msg === "string" ? parsed.base_resp.status_msg : "unknown error";
+      this.usage.failed_requests += 1;
+      throw new Error(`MiniMax embedding provider failed: ${statusCode} ${message}`);
+    }
+    if (typeof parsed.total_tokens === "number" && Number.isFinite(parsed.total_tokens)) {
+      this.usage.provider_total_tokens += parsed.total_tokens;
+    }
+    if (!Array.isArray(parsed.vectors) || parsed.vectors.length !== expectedLength) {
+      throw new Error(`MiniMax embedding provider returned ${parsed.vectors?.length ?? 0} vectors for ${expectedLength} inputs`);
+    }
+    return parsed.vectors.map((vector, index) => normalizeVector(vector, `MiniMax embedding ${index}`));
   }
 }
 
@@ -376,7 +429,23 @@ function nodeText(node: AionisMemoryNode | AionisMemoryNodeInput): string {
   ].filter(Boolean).join(" ");
 }
 
-function buildCorpus(options: EvalOptions, embeddings: Map<string, number[]>): { nodes: AionisMemoryNodeInput[]; probes: QueryProbe[] } {
+function targetEmbeddingText(item: SemanticCase): string {
+  return `${item.domain}\n${item.summary}\n${item.targetFile}`;
+}
+
+function decoySummary(item: SemanticCase, index: number, options: EvalOptions): string {
+  return [
+    `Decoy memory for ${item.domain}.`,
+    `This note discusses surrounding implementation work but is not the target answer for query ${index % options.queries}.`,
+    `Related file ${item.targetFile}; branch ${index % 19}; verifier note ${index % 11}.`,
+  ].join(" ");
+}
+
+function decoyEmbeddingText(item: SemanticCase, index: number, options: EvalOptions): string {
+  return `${item.domain}\n${decoySummary(item, index, options)}\n${item.targetFile}`;
+}
+
+function buildCorpus(options: EvalOptions, client: EmbeddingClient): { nodes: AionisMemoryNodeInput[]; probes: QueryProbe[] } {
   if (options.nodes < options.queries) throw new Error("--nodes must be greater than or equal to --queries");
   const nodes: AionisMemoryNodeInput[] = [];
   const probes: QueryProbe[] = [];
@@ -398,7 +467,7 @@ function buildCorpus(options: EvalOptions, embeddings: Map<string, number[]>): {
         provider_eval_role: "target",
         provider_eval_slug: item.slug,
         embedding_model: options.model,
-        embedding: embeddings.get(`${item.domain}\n${item.summary}\n${item.targetFile}`),
+        embedding: client.vectorFor(targetEmbeddingText(item), "db"),
       },
       createdAt: new Date(Date.UTC(2026, 5, 1, 0, index, 0)).toISOString(),
       updatedAt: new Date(Date.UTC(2026, 5, 1, 0, index, 30)).toISOString(),
@@ -412,11 +481,7 @@ function buildCorpus(options: EvalOptions, embeddings: Map<string, number[]>): {
     const scope = `provider-scope-${index % options.scopes}`;
     const stale = index % 7 === 0;
     const archived = index % 17 === 0;
-    const text = [
-      `Decoy memory for ${item.domain}.`,
-      `This note discusses surrounding implementation work but is not the target answer for query ${index % options.queries}.`,
-      `Related file ${item.targetFile}; branch ${index % 19}; verifier note ${index % 11}.`,
-    ].join(" ");
+    const text = decoySummary(item, index, options);
     nodes.push({
       id: `decoy-${index}`,
       scope,
@@ -432,7 +497,7 @@ function buildCorpus(options: EvalOptions, embeddings: Map<string, number[]>): {
         provider_eval_role: "decoy",
         provider_eval_slug: item.slug,
         embedding_model: options.model,
-        embedding: embeddings.get(`${item.domain}\n${text}\n${item.targetFile}`),
+        embedding: client.vectorFor(decoyEmbeddingText(item, index, options), "db"),
       },
       createdAt: new Date(Date.UTC(2026, 5, 1, 1, index % 60, 0)).toISOString(),
       updatedAt: new Date(Date.UTC(2026, 5, 1, 1, index % 60, 30)).toISOString(),
@@ -441,21 +506,23 @@ function buildCorpus(options: EvalOptions, embeddings: Map<string, number[]>): {
   return { nodes, probes };
 }
 
-function corpusEmbeddingTexts(options: EvalOptions): string[] {
+function corpusDbEmbeddingTexts(options: EvalOptions): string[] {
   const texts: string[] = [];
   for (let index = 0; index < options.queries; index += 1) {
     const item = SEMANTIC_CASES[index];
-    texts.push(`${item.domain}\n${item.summary}\n${item.targetFile}`);
-    texts.push(item.query);
+    texts.push(targetEmbeddingText(item));
   }
   for (let index = options.queries; index < options.nodes; index += 1) {
     const item = SEMANTIC_CASES[index % SEMANTIC_CASES.length];
-    const text = [
-      `Decoy memory for ${item.domain}.`,
-      `This note discusses surrounding implementation work but is not the target answer for query ${index % options.queries}.`,
-      `Related file ${item.targetFile}; branch ${index % 19}; verifier note ${index % 11}.`,
-    ].join(" ");
-    texts.push(`${item.domain}\n${text}\n${item.targetFile}`);
+    texts.push(decoyEmbeddingText(item, index, options));
+  }
+  return texts;
+}
+
+function corpusQueryEmbeddingTexts(options: EvalOptions): string[] {
+  const texts: string[] = [];
+  for (let index = 0; index < options.queries; index += 1) {
+    texts.push(SEMANTIC_CASES[index].query);
   }
   return texts;
 }
@@ -473,7 +540,7 @@ async function rawCandidateIds(index: AionisCandidateIndex, probe: QueryProbe, c
     scope: probe.scope,
     query: probe.query,
     embeddingModel: options.model,
-    queryVector: client.vectorFor(probe.query),
+    queryVector: client.vectorFor(probe.query, "query"),
     limit: options.candidateLimit,
   });
   return (rows ?? []).map((row) => row.memoryId);
@@ -484,7 +551,7 @@ async function finalSearchIds(store: AionisSubstrate, probe: QueryProbe, client:
     scope: probe.scope,
     query: probe.query,
     embeddingModel: options.model,
-    queryVector: client.vectorFor(probe.query),
+    queryVector: client.vectorFor(probe.query, "query"),
     candidateLimit,
     limit: options.resultLimit,
   }));
@@ -507,7 +574,7 @@ async function openIndexedStore(sqlitePath: string, zvecPath: string, client: Em
   const candidateIndex = createZvecCandidateIndex({
     path: zvecPath,
     embeddingModel: options.model,
-    vectorForQuery: (input) => input.query ? client.vectorFor(input.query) : null,
+    vectorForQuery: (input) => input.query ? client.vectorFor(input.query, "query") : null,
   });
   const store = await openSqliteAionisSubstrate({ path: sqlitePath, candidateIndex });
   return { store, candidateIndex };
@@ -526,9 +593,11 @@ async function main(): Promise<void> {
 
   try {
     await mkdir(reportDir, { recursive: true });
-    const embeddingTexts = corpusEmbeddingTexts(options);
-    const embeddings = await time(timings, "provider_embedding_ms", async () => client.embedTexts(embeddingTexts));
-    const { nodes, probes } = buildCorpus(options, embeddings);
+    const dbEmbeddingTexts = corpusDbEmbeddingTexts(options);
+    const queryEmbeddingTexts = corpusQueryEmbeddingTexts(options);
+    await time(timings, "provider_db_embedding_ms", async () => client.embedTexts(dbEmbeddingTexts, "db"));
+    await time(timings, "provider_query_embedding_ms", async () => client.embedTexts(queryEmbeddingTexts, "query"));
+    const { nodes, probes } = buildCorpus(options, client);
 
     indexed = await openIndexedStore(sqlitePath, zvecPath, client, options);
     await time(timings, "write_nodes_with_provider_vectors_ms", async () => writeNodes(indexed!.store, nodes));
@@ -579,6 +648,7 @@ async function main(): Promise<void> {
       contract_version: "aionis_zvec_provider_embedding_eval_v1",
       generated_at: new Date().toISOString(),
       provider: {
+        provider: options.provider,
         base_url: options.baseUrl,
         endpoint: options.endpoint,
         model: options.model,
@@ -627,6 +697,7 @@ async function main(): Promise<void> {
     await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
     console.log(JSON.stringify({
       report: reportPath,
+      provider: options.provider,
       model: options.model,
       nodes: nodes.length,
       probes: probes.length,
@@ -638,6 +709,7 @@ async function main(): Promise<void> {
       provider_requests: client.usage.provider_requests,
       embedded_texts: client.usage.embedded_texts,
       input_characters: client.usage.input_characters,
+      provider_total_tokens: client.usage.provider_total_tokens,
       timings,
     }, null, 2));
   } finally {
