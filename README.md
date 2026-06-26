@@ -124,6 +124,8 @@ Runtime snapshot import is documented in [docs/RUNTIME_SNAPSHOT_IMPORT.md](docs/
 
 Runtime live sidecar sync is documented in [docs/RUNTIME_LIVE_SIDECAR.md](docs/RUNTIME_LIVE_SIDECAR.md).
 
+Runtime Zvec candidate-index validation is documented in [docs/RUNTIME_ZVEC_CANDIDATE_INDEX.md](docs/RUNTIME_ZVEC_CANDIDATE_INDEX.md).
+
 Runtime reference corpus parity is documented in [docs/RUNTIME_REFERENCE_CORPUS.md](docs/RUNTIME_REFERENCE_CORPUS.md).
 
 Runtime sidecar stabilization is documented in [docs/RUNTIME_SIDECAR_STABILIZATION.md](docs/RUNTIME_SIDECAR_STABILIZATION.md).
@@ -226,6 +228,18 @@ npm run check:runtime-corpus -- \
 ```
 
 This scans Runtime Lite SQLite files read-only, imports selected scopes into temporary Substrate stores, and writes an aggregate matrix report under `reports/runtime-snapshot-corpus-*`. The report includes bucket totals, node/relation/feedback/decision coverage, source-table presence, skip reasons, and Runtime JSON issues.
+
+Runtime Zvec candidate-index check:
+
+```bash
+npm run check:runtime-zvec-index -- \
+  --root /path/to/AionisRuntime-focused/.tmp \
+  --max-scopes 20 \
+  --min-nodes 3 \
+  --probes-per-scope 8
+```
+
+This imports real Runtime Lite SQLite scopes into isolated Substrate SQLite stores, rebuilds a Zvec candidate index, verifies missing/orphan/stale health, and checks that wide candidate search preserves canonical Substrate search while narrow candidate search recovers seeded real Runtime memory nodes.
 
 Runtime live sidecar mirror:
 

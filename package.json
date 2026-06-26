@@ -36,6 +36,7 @@
     "check:runtime-sidecar": "node scripts/runtime-sidecar-check.ts",
     "check:runtime-live-sidecar-soak": "node scripts/runtime-live-sidecar-soak.ts",
     "check:runtime-product-bridge": "node scripts/runtime-product-bridge-gate.ts",
+    "check:runtime-zvec-index": "node scripts/runtime-zvec-candidate-index-check.ts",
     "make:runtime-product-reference": "node scripts/runtime-product-reference-fixture.ts",
     "check:external-admission-parity": "node scripts/external-admission-parity.ts",
     "check:runtime-dual-write": "node scripts/runtime-dual-write-experiment.ts",

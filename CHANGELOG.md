@@ -9,6 +9,7 @@ All notable changes to Aionis Substrate are documented here.
 - Live sidecar integration example that builds a real Runtime Lite SQLite source, mirrors it through the checkpointed sidecar, and previews governed context buckets.
 - Optional candidate index boundary with rebuild, verify, write-through node sync, and candidate-id narrowing before canonical Substrate scoring.
 - Optional Zvec-backed candidate index adapter for local vector preselection while keeping file/SQLite as truth storage.
+- Runtime Zvec candidate-index validation gate that imports real Runtime Lite SQLite scopes into isolated Substrate stores and checks Zvec health plus canonical-search parity.
 
 ## 0.1.4 - 2026-06-26
 
