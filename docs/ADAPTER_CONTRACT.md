@@ -54,6 +54,8 @@ The current schema version is `1`.
 
 The SQLite adapter must persist schema metadata in `substrate_metadata`, set SQLite `user_version`, and refuse to open a database whose schema version is newer than the runtime supports. Silent best-effort reads of future schemas are not allowed.
 
+SQLite schema changes must go through the adapter migration registry. Applied migrations are recorded in `substrate_schema_migrations` with version, name, and timestamp. A migration ledger whose recorded name no longer matches the current registry is treated as corruption and the store is rejected.
+
 The file adapter must write the schema version into `snapshot.json` and report the same version through `getStoreInfo`.
 
 ### 4. Scope Isolation
@@ -148,7 +150,7 @@ The test suite currently checks:
 - file snapshots can be rebuilt from append-only events;
 - concurrent writes are serialized with contiguous event sequences;
 - store schema version is reported by both adapters;
-- SQLite schema metadata is persisted and future unsupported schemas are rejected;
+- SQLite schema metadata and migration ledger are persisted, backfilled for legacy v1 stores, and future unsupported schemas are rejected;
 - event-log backups verify checksums and restore to file and SQLite stores;
 - checkpoint compaction preserves governed state and restarts future event sequences after the checkpoint;
 - file and SQLite adapters return identical read-only search results for the same scoped query;

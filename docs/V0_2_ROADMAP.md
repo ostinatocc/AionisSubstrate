@@ -23,6 +23,8 @@ Add a small schema-migration boundary for future SQLite changes:
 - migration tests for already-created stores;
 - no best-effort reads of unsupported future schemas.
 
+Initial implementation status: SQLite now has a registry-backed v1 migration ledger. Future schema changes should add migrations through that registry instead of editing open-time schema creation ad hoc.
+
 ### 2. Read API Hardening
 
 Expose scoped audit reads that do not mutate the event log:

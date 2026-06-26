@@ -49,7 +49,7 @@ This first version ships two embedded adapters:
 - every write is serialized and persisted.
 - reopening the store rebuilds the same state from disk.
 - every store reports its substrate schema version through `getStoreInfo`.
-- the SQLite adapter persists schema metadata and rejects stores created by a newer unsupported schema.
+- the SQLite adapter persists schema metadata, records applied schema migrations, and rejects stores created by a newer unsupported schema.
 - event-log backups can be exported, checksum-verified, and restored to either file or SQLite stores.
 - checkpoint compaction can rewrite a store event log to one checksum-covered checkpoint event without changing governed state.
 - `searchNodes` provides scoped deterministic lexical/structured search over memory nodes without mutating events or admission state. It is not ANN, vector recall, semantic retrieval, or a Recall Engine.

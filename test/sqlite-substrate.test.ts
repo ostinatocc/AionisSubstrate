@@ -193,6 +193,109 @@ test("sqlite adapter rejects a store created by a newer schema", async () => {
   });
 });
 
+test("sqlite migration scaffold records the initial schema migration once", async () => {
+  await withSqlite(async (path) => {
+    const firstOpenAt = new Date("2026-06-26T00:00:00.000Z");
+    const secondOpenAt = new Date("2026-06-26T01:00:00.000Z");
+
+    let store = await openSqliteAionisSubstrate({ path, now: () => firstOpenAt });
+    await store.close();
+
+    store = await openSqliteAionisSubstrate({ path, now: () => secondOpenAt });
+    await store.close();
+
+    const db = new DatabaseSync(path, { readOnly: true });
+    const migrations = (db.prepare(`
+      SELECT version, name, applied_at
+      FROM substrate_schema_migrations
+      ORDER BY version ASC
+    `).all() as Array<{ version: number; name: string; applied_at: string }>).map((row) => ({
+      version: row.version,
+      name: row.name,
+      applied_at: row.applied_at,
+    }));
+    const lastMigrated = db.prepare("SELECT value FROM substrate_metadata WHERE key = 'last_migrated_at'").get() as { value: string };
+    const lastCheck = db.prepare("SELECT value FROM substrate_metadata WHERE key = 'last_migration_check_at'").get() as { value: string };
+    const userVersion = db.prepare("PRAGMA user_version").get() as { user_version: number };
+    db.close();
+
+    assert.deepEqual(migrations, [{
+      version: 1,
+      name: "initial_substrate_schema",
+      applied_at: firstOpenAt.toISOString(),
+    }]);
+    assert.equal(lastMigrated.value, firstOpenAt.toISOString());
+    assert.equal(lastCheck.value, secondOpenAt.toISOString());
+    assert.equal(userVersion.user_version, 1);
+  });
+});
+
+test("sqlite migration scaffold backfills a legacy v1 store without rewriting events", async () => {
+  await withSqlite(async (path) => {
+    let store = await openSqliteAionisSubstrate({ path });
+    await store.putNode({
+      id: "existing",
+      scope: "repo-a",
+      kind: "fact",
+      summary: "Existing memory from a pre-ledger store.",
+      lifecycle: "active",
+      authority: "trusted",
+      confidence: 0.8,
+    });
+    await store.close();
+
+    let db = new DatabaseSync(path);
+    const eventCountBefore = db.prepare("SELECT count(*) AS count FROM substrate_events").get() as { count: number };
+    db.exec("DROP TABLE substrate_schema_migrations");
+    db.close();
+
+    store = await openSqliteAionisSubstrate({
+      path,
+      now: () => new Date("2026-06-26T02:00:00.000Z"),
+    });
+    await store.close();
+
+    db = new DatabaseSync(path, { readOnly: true });
+    const eventCountAfter = db.prepare("SELECT count(*) AS count FROM substrate_events").get() as { count: number };
+    const nodeCount = db.prepare("SELECT count(*) AS count FROM memory_nodes").get() as { count: number };
+    const migrationRow = db.prepare(`
+      SELECT version, name, applied_at
+      FROM substrate_schema_migrations
+      WHERE version = 1
+    `).get() as { version: number; name: string; applied_at: string };
+    const migration = {
+      version: migrationRow.version,
+      name: migrationRow.name,
+      applied_at: migrationRow.applied_at,
+    };
+    db.close();
+
+    assert.equal(eventCountAfter.count, eventCountBefore.count);
+    assert.equal(nodeCount.count, 1);
+    assert.deepEqual(migration, {
+      version: 1,
+      name: "initial_substrate_schema",
+      applied_at: "2026-06-26T02:00:00.000Z",
+    });
+  });
+});
+
+test("sqlite migration scaffold rejects a corrupted migration ledger", async () => {
+  await withSqlite(async (path) => {
+    const store = await openSqliteAionisSubstrate({ path });
+    await store.close();
+
+    const db = new DatabaseSync(path);
+    db.prepare("UPDATE substrate_schema_migrations SET name = 'tampered' WHERE version = 1").run();
+    db.close();
+
+    await assert.rejects(
+      openSqliteAionisSubstrate({ path }),
+      /SQLite migration 1 name mismatch: tampered !== initial_substrate_schema/,
+    );
+  });
+});
+
 test("sqlite adapter keeps controlled forgetting as a durable lifecycle transition", async () => {
   await withSqlite(async (path) => {
     const store = await openSqliteAionisSubstrate({ path });

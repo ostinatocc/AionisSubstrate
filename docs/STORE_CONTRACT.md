@@ -40,6 +40,8 @@ Adapters must expose schema metadata through `getStoreInfo`:
 
 The SQLite adapter persists schema metadata in `substrate_metadata` and mirrors the same version into SQLite `user_version`. Opening a store with a newer unsupported schema must fail before any mutation occurs.
 
+SQLite schema changes are applied through an explicit adapter migration registry. Applied migrations are recorded in `substrate_schema_migrations`. The registry must stay contiguous and end at the current substrate schema version, and a tampered migration name must cause open to fail.
+
 The file adapter writes the same schema version into `snapshot.json`. The append-only event log remains the durable evidence source; the snapshot schema is the derived read-model format.
 
 ### Backup Boundary

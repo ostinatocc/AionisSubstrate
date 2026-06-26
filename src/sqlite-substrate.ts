@@ -88,6 +88,18 @@ type SqliteEventRow = {
   payload_json: string;
 };
 
+type SqliteMigrationRow = {
+  version: number;
+  name: string;
+  applied_at: string;
+};
+
+type SqliteSchemaMigration = {
+  version: number;
+  name: string;
+  apply(db: DatabaseSync): void;
+};
+
 function requireNonEmpty(value: string, label: string): string {
   const trimmed = value.trim();
   if (!trimmed) throw new Error(`${label} is required`);
@@ -265,30 +277,61 @@ function writeMetadataValue(db: DatabaseSync, key: string, value: string): void 
   `).run(key, value);
 }
 
-function migrateSchema(db: DatabaseSync, migratedAt: string): void {
+function createMigrationMetadataTables(db: DatabaseSync): void {
   db.exec(`
-    PRAGMA journal_mode = WAL;
-
     CREATE TABLE IF NOT EXISTS substrate_metadata (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS substrate_schema_migrations (
+      version INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      applied_at TEXT NOT NULL
+    );
   `);
+}
 
-  const existingVersionRaw = readMetadataValue(db, "schema_version");
-  const existingVersion = existingVersionRaw === null ? null : Number(existingVersionRaw);
-  if (existingVersion !== null && (!Number.isInteger(existingVersion) || existingVersion < 1)) {
-    throw new Error(`invalid Aionis Substrate schema version: ${existingVersionRaw}`);
-  }
-  if (existingVersion !== null && existingVersion > CURRENT_SCHEMA_VERSION) {
-    throw new Error(`unsupported Aionis Substrate schema version ${existingVersion}; current runtime supports ${CURRENT_SCHEMA_VERSION}`);
-  }
+function readAppliedMigration(db: DatabaseSync, version: number): SqliteMigrationRow | null {
+  const row = db.prepare(`
+    SELECT version, name, applied_at
+    FROM substrate_schema_migrations
+    WHERE version = ?
+  `).get(version) as SqliteMigrationRow | undefined;
+  return row ?? null;
+}
 
-  const userVersion = Number((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
-  if (userVersion > CURRENT_SCHEMA_VERSION) {
-    throw new Error(`unsupported SQLite user_version ${userVersion}; current runtime supports ${CURRENT_SCHEMA_VERSION}`);
-  }
+function recordAppliedMigration(db: DatabaseSync, migration: SqliteSchemaMigration, appliedAt: string): void {
+  db.prepare(`
+    INSERT INTO substrate_schema_migrations (version, name, applied_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(version) DO NOTHING
+  `).run(migration.version, migration.name, appliedAt);
+}
 
+function validateMigrationRegistry(migrations: readonly SqliteSchemaMigration[]): void {
+  const seen = new Set<number>();
+  let expected = 1;
+  for (const migration of migrations) {
+    if (!Number.isInteger(migration.version) || migration.version < 1) {
+      throw new Error(`invalid SQLite migration version: ${migration.version}`);
+    }
+    if (migration.version !== expected) {
+      throw new Error(`SQLite migration registry must be contiguous; expected ${expected}, got ${migration.version}`);
+    }
+    if (seen.has(migration.version)) {
+      throw new Error(`duplicate SQLite migration version: ${migration.version}`);
+    }
+    seen.add(migration.version);
+    expected += 1;
+  }
+  const lastVersion = migrations.at(-1)?.version ?? 0;
+  if (lastVersion !== CURRENT_SCHEMA_VERSION) {
+    throw new Error(`SQLite migration registry ends at ${lastVersion}; current schema version is ${CURRENT_SCHEMA_VERSION}`);
+  }
+}
+
+function applyInitialSqliteSchema(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS substrate_events (
       sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -357,14 +400,75 @@ function migrateSchema(db: DatabaseSync, migratedAt: string): void {
     );
     CREATE INDEX IF NOT EXISTS idx_decision_traces_scope_created ON decision_traces(scope, created_at DESC, id);
   `);
+}
 
-  if (existingVersion === null) {
-    writeMetadataValue(db, "created_at", migratedAt);
+const SQLITE_SCHEMA_MIGRATIONS: readonly SqliteSchemaMigration[] = [{
+  version: 1,
+  name: "initial_substrate_schema",
+  apply: applyInitialSqliteSchema,
+}];
+
+function parseExistingSchemaVersion(raw: string | null): number | null {
+  if (raw === null) return null;
+  const version = Number(raw);
+  if (!Number.isInteger(version) || version < 1) {
+    throw new Error(`invalid Aionis Substrate schema version: ${raw}`);
   }
-  writeMetadataValue(db, "adapter", "sqlite");
-  writeMetadataValue(db, "schema_version", String(CURRENT_SCHEMA_VERSION));
-  writeMetadataValue(db, "last_migrated_at", migratedAt);
-  db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
+  return version;
+}
+
+function migrateSchema(db: DatabaseSync, migratedAt: string): void {
+  validateMigrationRegistry(SQLITE_SCHEMA_MIGRATIONS);
+  db.exec("PRAGMA journal_mode = WAL");
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    createMigrationMetadataTables(db);
+
+    const existingVersion = parseExistingSchemaVersion(readMetadataValue(db, "schema_version"));
+    if (existingVersion !== null && existingVersion > CURRENT_SCHEMA_VERSION) {
+      throw new Error(`unsupported Aionis Substrate schema version ${existingVersion}; current runtime supports ${CURRENT_SCHEMA_VERSION}`);
+    }
+
+    const userVersion = Number((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
+    if (!Number.isInteger(userVersion) || userVersion < 0) {
+      throw new Error(`invalid SQLite user_version ${userVersion}`);
+    }
+    if (userVersion > CURRENT_SCHEMA_VERSION) {
+      throw new Error(`unsupported SQLite user_version ${userVersion}; current runtime supports ${CURRENT_SCHEMA_VERSION}`);
+    }
+    if (existingVersion !== null && userVersion > 0 && existingVersion !== userVersion) {
+      throw new Error(`SQLite schema metadata mismatch: schema_version=${existingVersion}, user_version=${userVersion}`);
+    }
+
+    let appliedMigration = false;
+    for (const migration of SQLITE_SCHEMA_MIGRATIONS) {
+      const applied = readAppliedMigration(db, migration.version);
+      if (applied && applied.name !== migration.name) {
+        throw new Error(`SQLite migration ${migration.version} name mismatch: ${applied.name} !== ${migration.name}`);
+      }
+      if (!applied) {
+        migration.apply(db);
+        recordAppliedMigration(db, migration, migratedAt);
+        appliedMigration = true;
+      }
+    }
+
+    if (existingVersion === null && readMetadataValue(db, "created_at") === null) {
+      writeMetadataValue(db, "created_at", migratedAt);
+    }
+    writeMetadataValue(db, "adapter", "sqlite");
+    writeMetadataValue(db, "schema_version", String(CURRENT_SCHEMA_VERSION));
+    writeMetadataValue(db, "last_migration_check_at", migratedAt);
+    if (appliedMigration) {
+      writeMetadataValue(db, "last_migrated_at", migratedAt);
+    }
+    db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
 }
 
 export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOptions): Promise<AionisSubstrate> {
