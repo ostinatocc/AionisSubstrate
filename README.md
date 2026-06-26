@@ -11,6 +11,7 @@ It is not Aionis Runtime core, not an Agent framework, and not a vector database
 - Package: `@aionis/substrate`
 - Version: `0.0.1`
 - Runtime: Node 24+
+- License field: `UNLICENSED` until an explicit public license is chosen
 - Current adapters: file store and SQLite
 - Runtime integration status: read-only snapshot import, reference-corpus parity, external admission parity, and isolated dual-write sidecar experiments
 
@@ -44,13 +45,14 @@ This first version ships two embedded adapters:
 - `events.jsonl` is the append-only evidence log.
 - `snapshot.json` is a derived read model.
 - `openSqliteAionisSubstrate` stores the same event log and read model in SQLite tables.
+- SQLite uses Node's built-in `node:sqlite`; Node may print an experimental warning depending on the installed Node 24 build.
 - every write is serialized and persisted.
 - reopening the store rebuilds the same state from disk.
 - every store reports its substrate schema version through `getStoreInfo`.
 - the SQLite adapter persists schema metadata and rejects stores created by a newer unsupported schema.
 - event-log backups can be exported, checksum-verified, and restored to either file or SQLite stores.
 - checkpoint compaction can rewrite a store event log to one checksum-covered checkpoint event without changing governed state.
-- `searchNodes` provides scoped deterministic lexical/structured search over memory nodes without mutating events or admission state.
+- `searchNodes` provides scoped deterministic lexical/structured search over memory nodes without mutating events or admission state. It is not ANN, vector recall, semantic retrieval, or a Recall Engine.
 - `importRuntimeLiteSnapshot` can import an existing Runtime Lite SQLite database into an isolated Substrate store through a read-only source connection.
 
 This is intentionally small. It proves the substrate contract without changing the existing Aionis Runtime.

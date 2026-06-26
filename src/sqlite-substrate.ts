@@ -545,6 +545,42 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
     `).run(trace.scope, trace.id, trace.query ?? null, stringify(trace.decisions), trace.createdAt);
   }
 
+  function buildContext(input: { scope: string; query?: string | null; maxPerBucket?: number }): AionisCompiledContext {
+    const maxPerBucket = input.maxPerBucket ?? Number.POSITIVE_INFINITY;
+    const nodes = sortNodes((db.prepare("SELECT * FROM memory_nodes WHERE scope = ?").all(input.scope) as SqliteMemoryNodeRow[]).map(rowToNode));
+    const relations = (db.prepare("SELECT * FROM memory_relations WHERE scope = ?").all(input.scope) as SqliteRelationRow[]).map(rowToRelation);
+    const buckets: Record<AionisAdmissionAction, AionisMemoryNode[]> = {
+      use_now: [],
+      inspect_before_use: [],
+      do_not_use: [],
+      rehydrate: [],
+    };
+    const decisions: AionisAdmissionDecision[] = [];
+    for (const node of nodes) {
+      const decision = reasonsFor(node, relations);
+      decisions.push({ memoryId: node.id, action: decision.action, reasons: decision.reasons });
+      buckets[decision.action].push(node);
+    }
+    for (const action of Object.keys(buckets) as AionisAdmissionAction[]) {
+      buckets[action] = buckets[action].slice(0, maxPerBucket);
+    }
+    const trace: AionisDecisionTrace = {
+      id: randomUUID(),
+      scope: input.scope,
+      query: input.query ?? null,
+      decisions,
+      createdAt: isoNow(),
+    };
+    return {
+      scope: input.scope,
+      use_now: buckets.use_now,
+      inspect_before_use: buckets.inspect_before_use,
+      do_not_use: buckets.do_not_use,
+      rehydrate: buckets.rehydrate,
+      decision_trace: trace,
+    };
+  }
+
   return {
     async getStoreInfo() {
       return await enqueue(() => {
@@ -750,44 +786,16 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
       }));
     },
 
+    async previewContext(input): Promise<AionisCompiledContext> {
+      return await enqueue(() => buildContext(input));
+    },
+
     async compileContext(input): Promise<AionisCompiledContext> {
       return await enqueue(() => transaction(() => {
-        const maxPerBucket = input.maxPerBucket ?? Number.POSITIVE_INFINITY;
-        const nodes = sortNodes((db.prepare("SELECT * FROM memory_nodes WHERE scope = ?").all(input.scope) as SqliteMemoryNodeRow[]).map(rowToNode));
-        const relations = (db.prepare("SELECT * FROM memory_relations WHERE scope = ?").all(input.scope) as SqliteRelationRow[]).map(rowToRelation);
-        const buckets: Record<AionisAdmissionAction, AionisMemoryNode[]> = {
-          use_now: [],
-          inspect_before_use: [],
-          do_not_use: [],
-          rehydrate: [],
-        };
-        const decisions: AionisAdmissionDecision[] = [];
-        for (const node of nodes) {
-          const decision = reasonsFor(node, relations);
-          decisions.push({ memoryId: node.id, action: decision.action, reasons: decision.reasons });
-          buckets[decision.action].push(node);
-        }
-        for (const action of Object.keys(buckets) as AionisAdmissionAction[]) {
-          buckets[action] = buckets[action].slice(0, maxPerBucket);
-        }
-        const ts = isoNow();
-        const trace: AionisDecisionTrace = {
-          id: randomUUID(),
-          scope: input.scope,
-          query: input.query ?? null,
-          decisions,
-          createdAt: ts,
-        };
-        appendEvent("memory.decision.recorded", ts, trace);
-        insertDecisionRow(trace);
-        return {
-          scope: input.scope,
-          use_now: buckets.use_now,
-          inspect_before_use: buckets.inspect_before_use,
-          do_not_use: buckets.do_not_use,
-          rehydrate: buckets.rehydrate,
-          decision_trace: trace,
-        };
+        const context = buildContext(input);
+        appendEvent("memory.decision.recorded", context.decision_trace.createdAt, context.decision_trace);
+        insertDecisionRow(context.decision_trace);
+        return context;
       }));
     },
 

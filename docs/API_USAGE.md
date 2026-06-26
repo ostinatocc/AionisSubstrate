@@ -8,6 +8,7 @@ The API is intentionally small:
 - write relations between memory nodes;
 - record outcome feedback;
 - search memory nodes with scoped filters;
+- preview governed context without writing a receipt;
 - compile governed context;
 - inspect decision traces.
 
@@ -135,6 +136,22 @@ Search is a scoped, read-only substrate query.
 It supports structured filters for kind, lifecycle, authority, target files, owner identity, confidence, and update time. The optional `query` is deterministic lexical scoring over node id, title, summary, target files, payload pointer, owner ids, and primitive metadata.
 
 It is not vector search, semantic adjudication, or admission policy. Use `compileContext` when the Agent needs governed prompt surfaces.
+
+## Preview Context
+
+```ts
+const preview = await store.previewContext({
+  scope: "repo-a",
+  query: "continue the runtime implementation",
+});
+
+console.log(preview.use_now.map((node) => node.id));
+console.log(preview.inspect_before_use.map((node) => node.id));
+console.log(preview.do_not_use.map((node) => node.id));
+console.log(preview.rehydrate.map((node) => node.id));
+```
+
+`previewContext` uses the same admission buckets and reason codes as `compileContext`, but it does not append `memory.decision.recorded` or insert a decision row. Use it for UI previews, dry runs, and adapter parity checks where no exported context receipt should be created.
 
 ## Compile Context
 

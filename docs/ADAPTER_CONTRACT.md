@@ -99,11 +99,13 @@ Search is read-only. It must not append `memory.decision.recorded`, lifecycle ev
 
 Search is not a vector index and not the full Runtime admission policy. It is a deterministic substrate query for locating candidate memory nodes before higher-level governance decides whether they can affect an Agent turn.
 
-### 8. Decision Receipt Side Effect
+### 8. Context Preview and Decision Receipt Side Effect
+
+`previewContext` returns the same governed buckets and decision-reason shape as `compileContext`, but it is read-only. It must not append `memory.decision.recorded`, lifecycle events, relation events, feedback events, or any other event.
 
 `compileContext` records `memory.decision.recorded`.
 
-This is intentional: exported context must leave a receipt. If a caller needs a side-effect-free preview, the API should add a separate preview method instead of weakening `compileContext`.
+This is intentional: exported context must leave a receipt. Callers that need a side-effect-free preview must use `previewContext` instead of weakening `compileContext`.
 
 ### 9. Backup and Restore Integrity
 

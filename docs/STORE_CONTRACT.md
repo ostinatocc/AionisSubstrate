@@ -158,7 +158,9 @@ Every compiled context must include a decision trace:
 
 The trace is for audit/debug/measure. It must not mutate admission by itself.
 
-`compileContext` is intentionally not a pure read. It records `memory.decision.recorded` so every exported context has an auditable receipt. Tools that need a side-effect-free preview should add a separate preview API instead of treating `compileContext` as read-only.
+`previewContext` is the side-effect-free admission preview. It returns the same bucket and reason-code shape as `compileContext`, but it must not append events or insert decision rows.
+
+`compileContext` is intentionally not a pure read. It records `memory.decision.recorded` so every exported context has an auditable receipt. Tools that need a side-effect-free view must use `previewContext` instead of treating `compileContext` as read-only.
 
 ## Adapter Requirements
 

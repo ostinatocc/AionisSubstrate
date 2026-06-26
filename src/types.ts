@@ -297,6 +297,7 @@ export type AionisSubstrate = {
   putRelation(input: AionisRelationInput): Promise<AionisRelation>;
   recordFeedback(input: AionisFeedbackInput): Promise<AionisFeedback>;
   recordDecision(input: AionisDecisionTraceInput): Promise<AionisDecisionTrace>;
+  previewContext(input: { scope: string; query?: string | null; maxPerBucket?: number }): Promise<AionisCompiledContext>;
   compileContext(input: { scope: string; query?: string | null; maxPerBucket?: number }): Promise<AionisCompiledContext>;
   getNode(scope: string, id: string): Promise<AionisMemoryNode | null>;
   listNodes(scope: string): Promise<AionisMemoryNode[]>;

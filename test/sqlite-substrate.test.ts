@@ -93,6 +93,30 @@ test("sqlite substrate persists event log and structured read model across reope
   });
 });
 
+test("sqlite preview context is read-only while compile context records a decision receipt", async () => {
+  await withSqlite(async (path) => {
+    const store = await openSqliteAionisSubstrate({ path });
+    await seedGovernedScenario(store);
+
+    const beforePreview = await store.listEvents();
+    const preview = await store.previewContext({ scope: "repo-a" });
+    assert.deepEqual(preview.use_now.map((item) => item.id), ["current-route"]);
+    assert.deepEqual(preview.do_not_use.map((item) => item.id), ["old-route"]);
+    assert.deepEqual(preview.rehydrate.map((item) => item.id), ["raw-trace"]);
+    assert.equal((await store.listEvents()).length, beforePreview.length);
+
+    const compiled = await store.compileContext({ scope: "repo-a" });
+    assert.deepEqual(compiled.use_now.map((item) => item.id), preview.use_now.map((item) => item.id));
+    assert.deepEqual(compiled.do_not_use.map((item) => item.id), preview.do_not_use.map((item) => item.id));
+    assert.deepEqual(compiled.rehydrate.map((item) => item.id), preview.rehydrate.map((item) => item.id));
+
+    const afterCompile = await store.listEvents();
+    assert.equal(afterCompile.length, beforePreview.length + 1);
+    assert.equal(afterCompile.at(-1)?.type, "memory.decision.recorded");
+    await store.close();
+  });
+});
+
 test("sqlite adapter rejects a store created by a newer schema", async () => {
   await withSqlite(async (path) => {
     let store = await openSqliteAionisSubstrate({ path });

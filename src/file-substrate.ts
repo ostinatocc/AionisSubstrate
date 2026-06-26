@@ -209,6 +209,40 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
     };
   }
 
+  function buildContext(input: { scope: string; query?: string | null; maxPerBucket?: number }): AionisCompiledContext {
+    const maxPerBucket = input.maxPerBucket ?? Number.POSITIVE_INFINITY;
+    const buckets: Record<AionisAdmissionAction, AionisMemoryNode[]> = {
+      use_now: [],
+      inspect_before_use: [],
+      do_not_use: [],
+      rehydrate: [],
+    };
+    const decisions: AionisAdmissionDecision[] = [];
+    for (const node of sortNodes(Array.from(state.nodes.values()).filter((item) => item.scope === input.scope))) {
+      const decision = reasonsFor(node);
+      decisions.push({ memoryId: node.id, action: decision.action, reasons: decision.reasons });
+      buckets[decision.action].push(node);
+    }
+    for (const action of Object.keys(buckets) as AionisAdmissionAction[]) {
+      buckets[action] = buckets[action].slice(0, maxPerBucket);
+    }
+    const trace: AionisDecisionTrace = {
+      id: randomUUID(),
+      scope: input.scope,
+      query: input.query ?? null,
+      decisions,
+      createdAt: isoNow(),
+    };
+    return {
+      scope: input.scope,
+      use_now: buckets.use_now,
+      inspect_before_use: buckets.inspect_before_use,
+      do_not_use: buckets.do_not_use,
+      rehydrate: buckets.rehydrate,
+      decision_trace: trace,
+    };
+  }
+
   return {
     async getStoreInfo() {
       return {
@@ -391,44 +425,19 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
       return trace;
     },
 
+    async previewContext(input): Promise<AionisCompiledContext> {
+      return buildContext(input);
+    },
+
     async compileContext(input): Promise<AionisCompiledContext> {
-      const maxPerBucket = input.maxPerBucket ?? Number.POSITIVE_INFINITY;
-      const buckets: Record<AionisAdmissionAction, AionisMemoryNode[]> = {
-        use_now: [],
-        inspect_before_use: [],
-        do_not_use: [],
-        rehydrate: [],
-      };
-      const decisions: AionisAdmissionDecision[] = [];
-      for (const node of sortNodes(Array.from(state.nodes.values()).filter((item) => item.scope === input.scope))) {
-        const decision = reasonsFor(node);
-        decisions.push({ memoryId: node.id, action: decision.action, reasons: decision.reasons });
-        buckets[decision.action].push(node);
-      }
-      for (const action of Object.keys(buckets) as AionisAdmissionAction[]) {
-        buckets[action] = buckets[action].slice(0, maxPerBucket);
-      }
-      const trace: AionisDecisionTrace = {
-        id: randomUUID(),
-        scope: input.scope,
-        query: input.query ?? null,
-        decisions,
-        createdAt: isoNow(),
-      };
+      const context = buildContext(input);
       await append({
         id: randomUUID(),
         type: "memory.decision.recorded",
-        createdAt: trace.createdAt,
-        payload: trace,
+        createdAt: context.decision_trace.createdAt,
+        payload: context.decision_trace,
       });
-      return {
-        scope: input.scope,
-        use_now: buckets.use_now,
-        inspect_before_use: buckets.inspect_before_use,
-        do_not_use: buckets.do_not_use,
-        rehydrate: buckets.rehydrate,
-        decision_trace: trace,
-      };
+      return context;
     },
 
     async getNode(scope: string, id: string): Promise<AionisMemoryNode | null> {

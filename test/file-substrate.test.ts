@@ -103,6 +103,55 @@ test("superseding relation blocks stale memory while preserving the newer active
   });
 });
 
+test("preview context is read-only while compile context records a decision receipt", async () => {
+  await withStore(async (dir) => {
+    const store = await openFileAionisSubstrate({ dir });
+    await store.putNode({
+      id: "old-route",
+      scope: "repo-a",
+      kind: "procedure",
+      summary: "Use the old retry path in src/legacy.ts.",
+      lifecycle: "active",
+      authority: "trusted",
+      confidence: 0.8,
+      targetFiles: ["src/legacy.ts"],
+    });
+    await store.putNode({
+      id: "new-route",
+      scope: "repo-a",
+      kind: "procedure",
+      summary: "Use the new verifier-safe path in src/runtime.ts.",
+      lifecycle: "active",
+      authority: "trusted",
+      confidence: 0.93,
+      targetFiles: ["src/runtime.ts"],
+    });
+    await store.putRelation({
+      id: "rel-new-supersedes-old",
+      scope: "repo-a",
+      kind: "supersedes",
+      sourceId: "new-route",
+      targetId: "old-route",
+      confidence: 0.86,
+      reasons: ["newer execution evidence replaced the old route"],
+    });
+
+    const beforePreview = await store.listEvents();
+    const preview = await store.previewContext({ scope: "repo-a", query: "continue the runtime fix" });
+    assert.deepEqual(preview.use_now.map((node) => node.id), ["new-route"]);
+    assert.deepEqual(preview.do_not_use.map((node) => node.id), ["old-route"]);
+    assert.equal((await store.listEvents()).length, beforePreview.length);
+
+    const compiled = await store.compileContext({ scope: "repo-a", query: "continue the runtime fix" });
+    assert.deepEqual(compiled.use_now.map((node) => node.id), preview.use_now.map((node) => node.id));
+    assert.deepEqual(compiled.do_not_use.map((node) => node.id), preview.do_not_use.map((node) => node.id));
+
+    const afterCompile = await store.listEvents();
+    assert.equal(afterCompile.length, beforePreview.length + 1);
+    assert.equal(afterCompile.at(-1)?.type, "memory.decision.recorded");
+  });
+});
+
 test("archived evidence becomes a rehydrate hook rather than direct prompt context", async () => {
   await withStore(async (dir) => {
     const store = await openFileAionisSubstrate({ dir });
