@@ -47,6 +47,24 @@ npx aionis-substrate live-sidecar --source ./runtime.sqlite --target ./substrate
 npx aionis-substrate live-sidecar --source ./runtime.sqlite --target ./substrate.sqlite --adapter sqlite --checkpoint ./runtime-live-checkpoint.json --scope repo-a --watch --iterations 20 --interval-ms 5000
 ```
 
+## Two-Minute Live Sidecar Demo
+
+From a cloned repository:
+
+```bash
+npm run example:live-sidecar
+```
+
+The demo creates a real Runtime Lite SQLite source, inserts current route, failed
+branch, and raw-trace pointer evidence, mirrors that source into a separate
+Substrate SQLite store through `runRuntimeLiveSidecarOnce`, and previews the
+governed context buckets. The expected output shows:
+
+- `current-route` in `use_now`;
+- `failed-branch` in `do_not_use`;
+- `raw-trace` in `rehydrate`;
+- the second sidecar run applying zero unchanged rows.
+
 ## Goal
 
 Define the storage semantics Aionis needs before choosing or building a storage engine:
@@ -297,6 +315,7 @@ npm run check:runtime-live-sidecar-soak
 npm run check:pack
 npm run check:install-smoke
 npm run example:basic
+npm run example:live-sidecar
 ```
 
 The CI workflow runs the same checks on every push and pull request.

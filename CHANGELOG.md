@@ -4,6 +4,10 @@ All notable changes to Aionis Substrate are documented here.
 
 ## Unreleased
 
+### Added
+
+- Live sidecar integration example that builds a real Runtime Lite SQLite source, mirrors it through the checkpointed sidecar, and previews governed context buckets.
+
 ## 0.1.4 - 2026-06-26
 
 ### Added
