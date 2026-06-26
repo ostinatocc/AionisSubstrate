@@ -1,6 +1,6 @@
 {
   "name": "@aionis/substrate",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Durable governed memory substrate for Aionis execution state.",
   "type": "module",
   "main": "./dist/index.js",
@@ -34,6 +34,7 @@
     "check:runtime-corpus": "node scripts/runtime-snapshot-corpus.ts",
     "check:runtime-reference-corpus": "node scripts/runtime-reference-corpus.ts",
     "check:runtime-sidecar": "node scripts/runtime-sidecar-check.ts",
+    "check:runtime-live-sidecar-soak": "node scripts/runtime-live-sidecar-soak.ts",
     "make:runtime-product-reference": "node scripts/runtime-product-reference-fixture.ts",
     "check:external-admission-parity": "node scripts/external-admission-parity.ts",
     "check:runtime-dual-write": "node scripts/runtime-dual-write-experiment.ts",
@@ -43,7 +44,7 @@
     "check:published-runtime-smoke": "node scripts/published-runtime-smoke.ts",
     "check:scale": "node scripts/scale-test.ts",
     "example:basic": "npm run build && node examples/basic/index.mjs",
-    "check:release": "npm run typecheck && npm test && npm run bench:contract && npm run example:basic && npm run check:pack && npm run check:install-smoke"
+    "check:release": "npm run typecheck && npm test && npm run bench:contract && npm run example:basic && npm run check:runtime-live-sidecar-soak && npm run check:pack && npm run check:install-smoke"
   },
   "repository": {
     "type": "git",

@@ -18,6 +18,13 @@ Run the full release gate:
 npm run check:release
 ```
 
+`check:release` includes the Runtime live sidecar soak check. To run that gate
+directly:
+
+```bash
+npm run check:runtime-live-sidecar-soak
+```
+
 Run the scale smoke:
 
 ```bash

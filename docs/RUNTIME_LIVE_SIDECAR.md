@@ -80,6 +80,26 @@ It contains:
 - `lock_path`: the lock used for this run;
 - `iterations_requested` and `iterations_completed`.
 
+## Soak Check
+
+Use the soak check before release or before embedding the sidecar in a long-running host:
+
+```bash
+npm run check:runtime-live-sidecar-soak
+```
+
+The check creates a real Runtime Lite SQLite fixture, appends evidence in batches,
+and runs bounded watch loops against a separate real Substrate SQLite target. It
+verifies:
+
+- every newly appended Runtime row is applied exactly once;
+- unchanged rows remain checkpoint-skipped on later polls;
+- the checkpoint fingerprint count matches the mirrored target;
+- the lock file is released after every watch loop;
+- the target store can be reopened with the same node and event counts.
+
+The report contract is `aionis_runtime_live_sidecar_soak_report_v1`.
+
 ## Report
 
 The report contract is `aionis_runtime_live_sidecar_report_v1`.

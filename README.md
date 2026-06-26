@@ -9,7 +9,7 @@ It is not Aionis Runtime core, not an Agent framework, and not a vector database
 ## Status
 
 - Package: `@aionis/substrate`
-- Version: `0.1.3`
+- Version: `0.1.4`
 - Runtime: Node 24+
 - License: Apache-2.0
 - Current adapters: file store and SQLite
@@ -84,7 +84,7 @@ This first version ships two embedded adapters:
 - checkpoint compaction can rewrite a store event log to one checksum-covered checkpoint event without changing governed state.
 - `searchNodes` provides scoped deterministic lexical/structured search over memory nodes without mutating events or admission state. It is not ANN, vector recall, semantic retrieval, or a Recall Engine.
 - `importRuntimeLiteSnapshot` can import an existing Runtime Lite SQLite database into an isolated Substrate store through a read-only source connection.
-- `runRuntimeLiveSidecarOnce` and `aionis-substrate live-sidecar` incrementally mirror Runtime Lite evidence into a separate Substrate target through a checkpoint file.
+- `runRuntimeLiveSidecarOnce`, `runRuntimeLiveSidecarWatch`, and `aionis-substrate live-sidecar` incrementally mirror Runtime Lite evidence into a separate Substrate target through a checkpoint file.
 
 This is intentionally small. It proves the substrate contract without changing the existing Aionis Runtime.
 
@@ -293,6 +293,7 @@ npm run typecheck
 npm run build
 npm test
 npm run bench:contract
+npm run check:runtime-live-sidecar-soak
 npm run check:pack
 npm run check:install-smoke
 npm run example:basic
@@ -309,6 +310,8 @@ npm run check:release
 `check:pack` runs `npm pack --dry-run` and rejects package contents that would leak tests, reports, CI metadata, `node_modules`, or other non-runtime artifacts into the published tarball.
 
 `check:install-smoke` packs the built package, installs that tarball into a fresh temporary project, imports `@aionis/substrate`, and runs real file/SQLite store operations from the installed package.
+
+`check:runtime-live-sidecar-soak` creates a real Runtime Lite SQLite fixture, repeatedly appends execution-memory rows, and verifies checkpointed live-sidecar watch sync into a separate real Substrate SQLite store.
 
 After publishing to npm, run the registry package checks:
 

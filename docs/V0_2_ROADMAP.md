@@ -82,6 +82,7 @@ Before v0.2 can be tagged:
 - `npm run typecheck`
 - `npm test`
 - `npm run bench:contract`
+- `npm run check:runtime-live-sidecar-soak`
 - `npm run check:release`
 - `npm run check:scale -- --nodes 10000 --scopes 10 --relations 2000 --feedback 1000`
 - adapter parity tests for every new public API;
