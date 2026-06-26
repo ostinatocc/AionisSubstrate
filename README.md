@@ -9,9 +9,9 @@ It is not Aionis Runtime core, not an Agent framework, and not a vector database
 ## Status
 
 - Package: `@aionis/substrate`
-- Version: `0.0.1`
+- Version: `0.1.0`
 - Runtime: Node 24+
-- License field: `UNLICENSED` until an explicit public license is chosen
+- License: Apache-2.0
 - Current adapters: file store and SQLite
 - Runtime integration status: read-only snapshot import, reference-corpus parity, external admission parity, and isolated dual-write sidecar experiments
 
@@ -77,6 +77,12 @@ External admission parity is documented in [docs/EXTERNAL_ADMISSION_PARITY.md](d
 
 Runtime dual-write experimentation is documented in [docs/RUNTIME_DUAL_WRITE_EXPERIMENT.md](docs/RUNTIME_DUAL_WRITE_EXPERIMENT.md).
 
+Release steps are documented in [RELEASE.md](RELEASE.md).
+
+Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
+
+The basic package example is in [examples/basic](examples/basic).
+
 ## Quick Test
 
 ```bash
@@ -84,6 +90,7 @@ cd /Volumes/ziel/AionisSubstrate
 npm install
 npm run typecheck
 npm test
+npm run example:basic
 ```
 
 Node 24+ is required because the project runs TypeScript directly.
@@ -187,6 +194,7 @@ npm test
 npm run bench:contract
 npm run check:pack
 npm run check:install-smoke
+npm run example:basic
 ```
 
 The CI workflow runs the same checks on every push and pull request.

@@ -15,6 +15,8 @@ type PackDryRun = {
 const requiredFiles = [
   "package.json",
   "README.md",
+  "CHANGELOG.md",
+  "LICENSE",
   "dist/index.js",
   "dist/index.d.ts",
   "dist/types.js",
@@ -25,13 +27,18 @@ const requiredFiles = [
   "docs/API_USAGE.md",
   "docs/STORE_CONTRACT.md",
   "docs/ADAPTER_CONTRACT.md",
+  "examples/basic/index.mjs",
+  "examples/basic/README.md",
 ];
 
 const allowedPrefixes = [
   "package.json",
   "README.md",
+  "CHANGELOG.md",
+  "LICENSE",
   "dist/",
   "docs/",
+  "examples/",
 ];
 
 const forbiddenPrefixes = [
