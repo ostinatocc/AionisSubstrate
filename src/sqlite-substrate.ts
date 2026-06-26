@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { applyAionisEvent, checksumAionisEvents, emptyReplayState } from "./event-log.ts";
+import { searchMemoryNodes } from "./search.ts";
 import { AIONIS_SUBSTRATE_SCHEMA_VERSION as CURRENT_SCHEMA_VERSION } from "./types.ts";
 import type {
   AionisAdmissionAction,
@@ -796,6 +797,13 @@ export async function openSqliteAionisSubstrate(options: SqliteAionisSubstrateOp
 
     async listNodes(scope: string): Promise<AionisMemoryNode[]> {
       return await enqueue(() => sortNodes((db.prepare("SELECT * FROM memory_nodes WHERE scope = ?").all(scope) as SqliteMemoryNodeRow[]).map(rowToNode)));
+    },
+
+    async searchNodes(input) {
+      return await enqueue(() => {
+        const nodes = (db.prepare("SELECT * FROM memory_nodes WHERE scope = ?").all(input.scope) as SqliteMemoryNodeRow[]).map(rowToNode);
+        return searchMemoryNodes(nodes, input);
+      });
     },
 
     async listRelations(scope: string): Promise<AionisRelation[]> {

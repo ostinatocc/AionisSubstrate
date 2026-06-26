@@ -256,6 +256,32 @@ export type AionisCompactionReport = {
   };
 };
 
+export type AionisMemorySearchInput = {
+  scope: string;
+  query?: string | null;
+  kinds?: AionisMemoryKind[];
+  lifecycle?: AionisLifecycleState[];
+  authority?: AionisAuthorityState[];
+  targetFiles?: string[];
+  agentId?: string | null;
+  teamId?: string | null;
+  minConfidence?: number;
+  updatedAfter?: string;
+  updatedBefore?: string;
+  limit?: number;
+};
+
+export type AionisMemorySearchReason = {
+  code: string;
+  detail: string;
+};
+
+export type AionisMemorySearchResult = {
+  node: AionisMemoryNode;
+  score: number;
+  reasons: AionisMemorySearchReason[];
+};
+
 export type AionisSubstrate = {
   getStoreInfo(): Promise<AionisSubstrateStoreInfo>;
   compact(): Promise<AionisCompactionReport>;
@@ -274,6 +300,7 @@ export type AionisSubstrate = {
   compileContext(input: { scope: string; query?: string | null; maxPerBucket?: number }): Promise<AionisCompiledContext>;
   getNode(scope: string, id: string): Promise<AionisMemoryNode | null>;
   listNodes(scope: string): Promise<AionisMemoryNode[]>;
+  searchNodes(input: AionisMemorySearchInput): Promise<AionisMemorySearchResult[]>;
   listRelations(scope: string): Promise<AionisRelation[]>;
   listEvents(): Promise<AionisEvent[]>;
   close(): Promise<void>;

@@ -10,6 +10,7 @@ import {
   snapshotFromReplayState,
   type AionisReplayState,
 } from "./event-log.ts";
+import { searchMemoryNodes } from "./search.ts";
 import type {
   AionisAdmissionAction,
   AionisAdmissionDecision,
@@ -436,6 +437,10 @@ export async function openFileAionisSubstrate(options: FileAionisSubstrateOption
 
     async listNodes(scope: string): Promise<AionisMemoryNode[]> {
       return sortNodes(Array.from(state.nodes.values()).filter((node) => node.scope === scope));
+    },
+
+    async searchNodes(input) {
+      return searchMemoryNodes(Array.from(state.nodes.values()), input);
     },
 
     async listRelations(scope: string): Promise<AionisRelation[]> {

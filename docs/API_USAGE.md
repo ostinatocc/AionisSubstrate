@@ -7,6 +7,7 @@ The API is intentionally small:
 - write memory nodes;
 - write relations between memory nodes;
 - record outcome feedback;
+- search memory nodes with scoped filters;
 - compile governed context;
 - inspect decision traces.
 
@@ -110,6 +111,30 @@ await store.recordFeedback({
 ```
 
 Feedback is evidence. It does not bypass lifecycle, relation, or authority checks.
+
+## Search Memory Nodes
+
+```ts
+const results = await store.searchNodes({
+  scope: "repo-a",
+  query: "runtime verifier",
+  lifecycle: ["active"],
+  authority: ["trusted"],
+  targetFiles: ["src/runtime.ts"],
+  minConfidence: 0.8,
+  limit: 10,
+});
+
+for (const result of results) {
+  console.log(result.node.id, result.score, result.reasons);
+}
+```
+
+Search is a scoped, read-only substrate query.
+
+It supports structured filters for kind, lifecycle, authority, target files, owner identity, confidence, and update time. The optional `query` is deterministic lexical scoring over node id, title, summary, target files, payload pointer, owner ids, and primitive metadata.
+
+It is not vector search, semantic adjudication, or admission policy. Use `compileContext` when the Agent needs governed prompt surfaces.
 
 ## Compile Context
 

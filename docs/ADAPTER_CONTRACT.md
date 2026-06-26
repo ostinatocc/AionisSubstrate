@@ -91,13 +91,21 @@ Given the same durable state, adapters must compile the same admission buckets:
 
 The contract benchmark checks file/SQLite parity for the same governed scenarios.
 
-### 7. Decision Receipt Side Effect
+### 7. Search Parity
+
+Given the same durable node state, adapters must return the same `searchNodes` ids, scores, and reason codes for the same scoped query.
+
+Search is read-only. It must not append `memory.decision.recorded`, lifecycle events, or any other event.
+
+Search is not a vector index and not the full Runtime admission policy. It is a deterministic substrate query for locating candidate memory nodes before higher-level governance decides whether they can affect an Agent turn.
+
+### 8. Decision Receipt Side Effect
 
 `compileContext` records `memory.decision.recorded`.
 
 This is intentional: exported context must leave a receipt. If a caller needs a side-effect-free preview, the API should add a separate preview method instead of weakening `compileContext`.
 
-### 8. Backup and Restore Integrity
+### 9. Backup and Restore Integrity
 
 Backup export must operate over the append-only event log, not only over derived read-model tables or snapshots.
 
@@ -129,6 +137,7 @@ The test suite currently checks:
 - SQLite schema metadata is persisted and future unsupported schemas are rejected;
 - event-log backups verify checksums and restore to file and SQLite stores;
 - checkpoint compaction preserves governed state and restarts future event sequences after the checkpoint;
+- file and SQLite adapters return identical read-only search results for the same scoped query;
 - Runtime snapshot import opens source SQLite read-only.
 
 ## Non-Goals

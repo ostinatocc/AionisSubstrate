@@ -82,6 +82,21 @@ A memory node is a governed memory object:
 
 The store treats execution memory, procedure memory, facts, preferences, claims, feedback, and trace pointers as first-class node kinds. It does not flatten all memory into free text.
 
+### Search Contract
+
+`searchNodes` is a read-only substrate query over memory nodes.
+
+It must:
+
+- require an explicit `scope`;
+- keep all results scoped;
+- support exact filters for kind, lifecycle, authority, target file, owner identity, confidence, and update time;
+- provide deterministic lexical query scoring over node id, title, summary, target files, payload pointer, owner ids, and primitive metadata;
+- return scored results with inspectable reason codes;
+- avoid writing decision events or mutating lifecycle state.
+
+Search is not admission. It may find candidate evidence, but it must not decide whether memory can influence the next Agent turn. Governed prompt surfaces are produced by `compileContext`.
+
 ### Relation Graph
 
 Relations connect memory evidence:
@@ -153,9 +168,10 @@ Every adapter must satisfy the same observable contract:
 2. Preserve scope isolation.
 3. Keep lifecycle transitions instead of deleting memory.
 4. Compile the same admission buckets from the same node/relation state.
-5. Record decision traces as events.
-6. Reopen cleanly and recover the same read model.
-7. If compaction is supported, compact only through a validated checkpoint event.
+5. Return the same scoped search results from the same node state.
+6. Record decision traces as events.
+7. Reopen cleanly and recover the same read model.
+8. If compaction is supported, compact only through a validated checkpoint event.
 
 Current adapters:
 
