@@ -11,10 +11,11 @@ This distinction matters. Zvec is a candidate sidecar, not the truth store and n
 
 ## Provider Contract
 
-The eval supports two provider contracts:
+The eval supports three provider contracts:
 
 - `openai`: OpenAI-compatible embeddings endpoints.
 - `minimax`: MiniMax native embeddings endpoint.
+- `dashscope`: Alibaba Cloud DashScope native embeddings endpoint.
 
 ### OpenAI-Compatible
 
@@ -49,6 +50,32 @@ Content-Type: application/json
 
 The eval calls MiniMax with `type: "db"` for memory-node vectors and
 `type: "query"` for query vectors. The response must contain `vectors[]`.
+
+### DashScope Native
+
+DashScope native embeddings use separate `text_type` values for document and
+query vectors:
+
+```text
+POST <base-url><endpoint>
+Authorization: Bearer <api-key>
+Content-Type: application/json
+
+{
+  "model": "text-embedding-v4",
+  "input": {
+    "texts": ["document text one", "document text two"]
+  },
+  "parameters": {
+    "text_type": "document",
+    "dimension": 1024
+  }
+}
+```
+
+The eval calls DashScope with `text_type: "document"` for memory-node vectors
+and `text_type: "query"` for query vectors. The response must contain
+`output.embeddings[].embedding` arrays, ordered by `text_index`.
 
 ## Run
 
@@ -96,6 +123,27 @@ example uses `--batch-size 10`. In the current provider eval, `--candidate-limit
 40` is a better first setting than `20` because it lets Zvec act as a semantic
 candidate preselector without prematurely excluding lexical matches.
 
+For Alibaba Cloud DashScope `text-embedding-v4` through the native endpoint:
+
+```bash
+AIONIS_EMBEDDING_PROVIDER=dashscope \
+AIONIS_EMBEDDING_API_KEY=... \
+AIONIS_EMBEDDING_MODEL=text-embedding-v4 \
+npm run check:zvec-provider-embedding -- \
+  --dimensions 1024 \
+  --projection structured \
+  --query-instruct "Retrieve the Aionis Substrate memory document that best answers the implementation question." \
+  --batch-size 10 \
+  --nodes 240 \
+  --scopes 4 \
+  --queries 20 \
+  --candidate-limit 40
+```
+
+The native provider path is useful because it preserves the provider's
+query/document embedding contract instead of embedding every text through one
+generic endpoint shape.
+
 For MiniMax:
 
 ```bash
@@ -114,12 +162,14 @@ The command writes a report under `reports/zvec-provider-embedding-*` unless `--
 
 ## Options
 
-- `--provider <openai|minimax>`: embedding provider contract. Defaults to `AIONIS_EMBEDDING_PROVIDER` or `openai`.
+- `--provider <openai|minimax|dashscope>`: embedding provider contract. Defaults to `AIONIS_EMBEDDING_PROVIDER` or `openai`.
 - `--base-url <url>`: provider base URL. Defaults to `AIONIS_EMBEDDING_BASE_URL` or `https://api.openai.com/v1`.
 - `--endpoint <path>`: embeddings endpoint. Defaults to `AIONIS_EMBEDDING_ENDPOINT` or `/embeddings`.
 - `--model <name>`: embedding model. Defaults to `AIONIS_EMBEDDING_MODEL`.
 - `--api-key-var <name>`: environment variable containing the API key. Defaults to `AIONIS_EMBEDDING_API_KEY`.
 - `--dimensions <n>`: optional embedding dimensions request parameter.
+- `--projection <plain|structured>`: embedding text projection. `plain` embeds the raw summary/query text; `structured` embeds labelled memory-document and retrieval-query text. Defaults to `structured`.
+- `--query-instruct <text>`: optional query instruction for providers that support query-side instructions.
 - `--nodes <n>`: generated Substrate nodes.
 - `--scopes <n>`: generated scopes.
 - `--queries <n>`: semantic query probes. Current built-in fixture supports up to 24.
@@ -139,6 +189,17 @@ Important fields:
 - `probe_results`: per-query raw candidate rank, final rank, lexical rank, and returned ids for miss analysis.
 - `embedding_usage`: provider requests, embedded text count, input character count, provider token count when exposed, and failed request count.
 - `zvec_health`: missing, orphan, and stale sidecar diagnostics.
+
+Current DashScope native `text-embedding-v4` smoke results on this fixture:
+
+| Projection | Dimension | Raw Top-1 | Raw Top-K | Final Top-K | Lexical Top-K |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `plain` | 1024 | 25% | 100% | 75% | 70% |
+| `structured` + query/document | 1024 | 65% | 100% | 85% | 70% |
+| `structured` + query/document | 2048 | 65% | 100% | 85% | 70% |
+
+The useful gain comes from the query/document projection contract, not from
+larger vector dimensionality on this fixture.
 
 If raw Zvec hit rate is strong but final Substrate hit rate is weaker, the provider embeddings are finding useful candidates but the final canonical scorer is still acting as a lexical/structured gate. That is a search-contract boundary, not a provider failure.
 

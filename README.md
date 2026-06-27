@@ -415,4 +415,4 @@ npm run check:zvec-provider-embedding -- \
   --candidate-limit 20
 ```
 
-This uses a real embedding provider through an OpenAI-compatible `/embeddings` endpoint, stores provider vectors on generated Substrate nodes, runs Zvec candidate search, and reports both raw Zvec candidate hit rate and final Substrate search hit rate.
+This uses a real embedding provider, stores provider vectors on generated Substrate nodes, runs Zvec candidate search, and reports both raw Zvec candidate hit rate and final Substrate search hit rate. The runner supports OpenAI-compatible endpoints, MiniMax native embeddings, and DashScope native `text-embedding-v4` with query/document projection.

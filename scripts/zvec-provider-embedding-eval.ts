@@ -20,6 +20,8 @@ type EvalOptions = {
   apiKeyVar: string;
   model: string;
   dimensions?: number;
+  projection: EmbeddingProjection;
+  queryInstruct?: string;
   nodes: number;
   scopes: number;
   queries: number;
@@ -59,8 +61,9 @@ type IndexedStore = {
   candidateIndex: AionisCandidateIndex;
 };
 
-type EmbeddingProvider = "openai" | "minimax";
+type EmbeddingProvider = "openai" | "minimax" | "dashscope";
 type EmbeddingPurpose = "db" | "query";
+type EmbeddingProjection = "plain" | "structured";
 
 const SEMANTIC_CASES: SemanticCase[] = [
   {
@@ -234,7 +237,13 @@ const SEMANTIC_CASES: SemanticCase[] = [
 ];
 
 type EmbeddingResponse = {
+  status_code?: unknown;
+  code?: unknown;
+  message?: unknown;
   data?: Array<{ embedding?: unknown; index?: number }>;
+  output?: {
+    embeddings?: Array<{ embedding?: unknown; text_index?: number }>;
+  };
   vectors?: unknown[];
   total_tokens?: unknown;
   base_resp?: {
@@ -266,16 +275,28 @@ function parseOptions(): EvalOptions {
   if (!model) throw new Error("--model or AIONIS_EMBEDDING_MODEL is required");
   const dimensionsRaw = readArg("dimensions", process.env.AIONIS_EMBEDDING_DIMENSIONS);
   const providerRaw = readArg("provider", process.env.AIONIS_EMBEDDING_PROVIDER ?? "openai")!.toLowerCase();
-  if (providerRaw !== "openai" && providerRaw !== "minimax") {
-    throw new Error("--provider must be openai or minimax");
+  if (providerRaw !== "openai" && providerRaw !== "minimax" && providerRaw !== "dashscope") {
+    throw new Error("--provider must be openai, minimax, or dashscope");
   }
+  const projectionRaw = readArg("projection", process.env.AIONIS_EMBEDDING_PROJECTION ?? "structured")!.toLowerCase();
+  if (projectionRaw !== "plain" && projectionRaw !== "structured") {
+    throw new Error("--projection must be plain or structured");
+  }
+  const defaultBaseUrl = providerRaw === "dashscope"
+    ? "https://dashscope.aliyuncs.com/api/v1"
+    : "https://api.openai.com/v1";
+  const defaultEndpoint = providerRaw === "dashscope"
+    ? "/services/embeddings/text-embedding/text-embedding"
+    : "/embeddings";
   return {
     provider: providerRaw,
-    baseUrl: readArg("base-url", process.env.AIONIS_EMBEDDING_BASE_URL ?? "https://api.openai.com/v1")!,
-    endpoint: readArg("endpoint", process.env.AIONIS_EMBEDDING_ENDPOINT ?? "/embeddings")!,
+    baseUrl: readArg("base-url", process.env.AIONIS_EMBEDDING_BASE_URL ?? defaultBaseUrl)!,
+    endpoint: readArg("endpoint", process.env.AIONIS_EMBEDDING_ENDPOINT ?? defaultEndpoint)!,
     apiKeyVar: readArg("api-key-var", "AIONIS_EMBEDDING_API_KEY")!,
     model,
     dimensions: dimensionsRaw === undefined ? undefined : readNumber("dimensions", Number(dimensionsRaw)),
+    projection: projectionRaw,
+    queryInstruct: readArg("query-instruct", process.env.AIONIS_EMBEDDING_QUERY_INSTRUCT),
     nodes: readNumber("nodes", 240),
     scopes: readNumber("scopes", 4),
     queries: Math.min(readNumber("queries", Math.min(40, SEMANTIC_CASES.length)), SEMANTIC_CASES.length),
@@ -374,6 +395,7 @@ class EmbeddingClient {
     }
     const parsed = await response.json() as EmbeddingResponse;
     if (this.options.provider === "minimax") return this.parseMiniMaxResponse(parsed, texts.length);
+    if (this.options.provider === "dashscope") return this.parseDashScopeResponse(parsed, texts.length);
     return this.parseOpenAiCompatibleResponse(parsed, texts.length);
   }
 
@@ -383,6 +405,20 @@ class EmbeddingClient {
         model: this.options.model,
         type: purpose,
         texts,
+      };
+    }
+    if (this.options.provider === "dashscope") {
+      const parameters: Record<string, unknown> = {
+        text_type: purpose === "query" ? "query" : "document",
+      };
+      if (this.options.dimensions !== undefined) parameters.dimension = this.options.dimensions;
+      if (purpose === "query" && this.options.queryInstruct?.trim()) {
+        parameters.instruct = this.options.queryInstruct.trim();
+      }
+      return {
+        model: this.options.model,
+        input: { texts },
+        parameters,
       };
     }
     const body: Record<string, unknown> = {
@@ -398,7 +434,29 @@ class EmbeddingClient {
       throw new Error(`embedding provider returned ${parsed.data?.length ?? 0} embeddings for ${expectedLength} inputs`);
     }
     const rows = [...parsed.data].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    this.addUsageTokens(parsed.usage);
     return rows.map((row, index) => normalizeVector(row.embedding, `embedding ${index}`));
+  }
+
+  private parseDashScopeResponse(parsed: EmbeddingResponse, expectedLength: number): number[][] {
+    const statusCode = parsed.status_code;
+    if (typeof statusCode === "number" && statusCode >= 400) {
+      const message = typeof parsed.message === "string" ? parsed.message : "unknown error";
+      this.usage.failed_requests += 1;
+      throw new Error(`DashScope embedding provider failed: ${statusCode} ${message}`);
+    }
+    if (typeof parsed.code === "string" && parsed.code.length > 0) {
+      const message = typeof parsed.message === "string" ? parsed.message : "unknown error";
+      this.usage.failed_requests += 1;
+      throw new Error(`DashScope embedding provider failed: ${parsed.code} ${message}`);
+    }
+    this.addUsageTokens(parsed.usage);
+    const embeddings = parsed.output?.embeddings;
+    if (!Array.isArray(embeddings) || embeddings.length !== expectedLength) {
+      throw new Error(`DashScope embedding provider returned ${embeddings?.length ?? 0} embeddings for ${expectedLength} inputs`);
+    }
+    const rows = [...embeddings].sort((a, b) => (a.text_index ?? 0) - (b.text_index ?? 0));
+    return rows.map((row, index) => normalizeVector(row.embedding, `DashScope embedding ${index}`));
   }
 
   private parseMiniMaxResponse(parsed: EmbeddingResponse, expectedLength: number): number[][] {
@@ -416,6 +474,12 @@ class EmbeddingClient {
     }
     return parsed.vectors.map((vector, index) => normalizeVector(vector, `MiniMax embedding ${index}`));
   }
+
+  private addUsageTokens(usage: unknown): void {
+    if (!usage || typeof usage !== "object") return;
+    const value = (usage as { total_tokens?: unknown }).total_tokens;
+    if (typeof value === "number" && Number.isFinite(value)) this.usage.provider_total_tokens += value;
+  }
 }
 
 function nodeText(node: AionisMemoryNode | AionisMemoryNodeInput): string {
@@ -429,8 +493,17 @@ function nodeText(node: AionisMemoryNode | AionisMemoryNodeInput): string {
   ].filter(Boolean).join(" ");
 }
 
-function targetEmbeddingText(item: SemanticCase): string {
-  return `${item.domain}\n${item.summary}\n${item.targetFile}`;
+function targetEmbeddingText(item: SemanticCase, options: EvalOptions): string {
+  if (options.projection === "plain") return `${item.domain}\n${item.summary}\n${item.targetFile}`;
+  return [
+    "aionis_substrate_memory_document",
+    `domain: ${item.domain}`,
+    "memory_kind: procedure",
+    "lifecycle: active",
+    "authority: trusted",
+    `summary: ${item.summary}`,
+    `target_file: ${item.targetFile}`,
+  ].join("\n");
 }
 
 function decoySummary(item: SemanticCase, index: number, options: EvalOptions): string {
@@ -442,7 +515,28 @@ function decoySummary(item: SemanticCase, index: number, options: EvalOptions): 
 }
 
 function decoyEmbeddingText(item: SemanticCase, index: number, options: EvalOptions): string {
-  return `${item.domain}\n${decoySummary(item, index, options)}\n${item.targetFile}`;
+  const summary = decoySummary(item, index, options);
+  if (options.projection === "plain") return `${item.domain}\n${summary}\n${item.targetFile}`;
+  const archived = index % 17 === 0;
+  const stale = index % 7 === 0;
+  return [
+    "aionis_substrate_memory_document",
+    `domain: ${item.domain}`,
+    `memory_kind: ${archived ? "trace_pointer" : stale ? "claim" : "fact"}`,
+    `lifecycle: ${archived ? "archived" : stale ? "contested" : "active"}`,
+    `authority: ${archived ? "trusted" : stale ? "advisory" : "trusted"}`,
+    `summary: ${summary}`,
+    `target_file: ${item.targetFile}`,
+  ].join("\n");
+}
+
+function queryEmbeddingText(query: string, options: EvalOptions): string {
+  if (options.projection === "plain") return query;
+  return [
+    "aionis_substrate_retrieval_query",
+    "task: retrieve the memory document that answers this implementation question",
+    `query: ${query}`,
+  ].join("\n");
 }
 
 function buildCorpus(options: EvalOptions, client: EmbeddingClient): { nodes: AionisMemoryNodeInput[]; probes: QueryProbe[] } {
@@ -467,7 +561,7 @@ function buildCorpus(options: EvalOptions, client: EmbeddingClient): { nodes: Ai
         provider_eval_role: "target",
         provider_eval_slug: item.slug,
         embedding_model: options.model,
-        embedding: client.vectorFor(targetEmbeddingText(item), "db"),
+        embedding: client.vectorFor(targetEmbeddingText(item, options), "db"),
       },
       createdAt: new Date(Date.UTC(2026, 5, 1, 0, index, 0)).toISOString(),
       updatedAt: new Date(Date.UTC(2026, 5, 1, 0, index, 30)).toISOString(),
@@ -510,7 +604,7 @@ function corpusDbEmbeddingTexts(options: EvalOptions): string[] {
   const texts: string[] = [];
   for (let index = 0; index < options.queries; index += 1) {
     const item = SEMANTIC_CASES[index];
-    texts.push(targetEmbeddingText(item));
+    texts.push(targetEmbeddingText(item, options));
   }
   for (let index = options.queries; index < options.nodes; index += 1) {
     const item = SEMANTIC_CASES[index % SEMANTIC_CASES.length];
@@ -522,7 +616,7 @@ function corpusDbEmbeddingTexts(options: EvalOptions): string[] {
 function corpusQueryEmbeddingTexts(options: EvalOptions): string[] {
   const texts: string[] = [];
   for (let index = 0; index < options.queries; index += 1) {
-    texts.push(SEMANTIC_CASES[index].query);
+    texts.push(queryEmbeddingText(SEMANTIC_CASES[index].query, options));
   }
   return texts;
 }
@@ -540,7 +634,7 @@ async function rawCandidateIds(index: AionisCandidateIndex, probe: QueryProbe, c
     scope: probe.scope,
     query: probe.query,
     embeddingModel: options.model,
-    queryVector: client.vectorFor(probe.query, "query"),
+    queryVector: client.vectorFor(queryEmbeddingText(probe.query, options), "query"),
     limit: options.candidateLimit,
   });
   return (rows ?? []).map((row) => row.memoryId);
@@ -551,7 +645,7 @@ async function finalSearchIds(store: AionisSubstrate, probe: QueryProbe, client:
     scope: probe.scope,
     query: probe.query,
     embeddingModel: options.model,
-    queryVector: client.vectorFor(probe.query, "query"),
+    queryVector: client.vectorFor(queryEmbeddingText(probe.query, options), "query"),
     candidateLimit,
     limit: options.resultLimit,
   }));
@@ -579,7 +673,7 @@ async function openIndexedStore(sqlitePath: string, zvecPath: string, client: Em
   const candidateIndex = createZvecCandidateIndex({
     path: zvecPath,
     embeddingModel: options.model,
-    vectorForQuery: (input) => input.query ? client.vectorFor(input.query, "query") : null,
+    vectorForQuery: (input) => input.query ? client.vectorFor(queryEmbeddingText(input.query, options), "query") : null,
   });
   const store = await openSqliteAionisSubstrate({ path: sqlitePath, candidateIndex });
   return { store, candidateIndex };
@@ -658,6 +752,8 @@ async function main(): Promise<void> {
         endpoint: options.endpoint,
         model: options.model,
         dimensions: options.dimensions ?? null,
+        projection: options.projection,
+        query_instruct: options.queryInstruct ?? null,
         api_key_var: options.apiKeyVar,
       },
       requested: {
