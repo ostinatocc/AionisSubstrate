@@ -99,6 +99,7 @@ This first version ships two embedded adapters:
 - `searchNodes` provides scoped deterministic lexical/structured search over memory nodes without mutating events or admission state.
 - stores can be opened with an optional candidate index. The index is rebuilt on open by default, receives write-through node updates, can be verified for missing/orphan/stale entries, and only narrows candidate ids before Substrate reloads truth nodes and scores them.
 - `createZvecCandidateIndex` provides an optional Zvec-backed candidate index for local vector preselection. Substrate fuses candidate-index rank into final search while preserving scope, lifecycle, authority, confidence, and target-file filters. It requires installing `@zvec/zvec`; file/SQLite remain the truth store.
+- `buildAionisEmbeddingDocument` and `buildAionisEmbeddingQuery` expose the stable SDK projection for hosts that generate provider vectors before writing nodes or querying Zvec.
 - `importRuntimeLiteSnapshot` can import an existing Runtime Lite SQLite database into an isolated Substrate store through a read-only source connection.
 - `runRuntimeLiveSidecarOnce`, `runRuntimeLiveSidecarWatch`, and `aionis-substrate live-sidecar` incrementally mirror Runtime Lite evidence into a separate Substrate target through a checkpoint file.
 

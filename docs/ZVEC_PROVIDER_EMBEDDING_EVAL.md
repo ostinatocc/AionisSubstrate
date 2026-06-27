@@ -168,7 +168,7 @@ The command writes a report under `reports/zvec-provider-embedding-*` unless `--
 - `--model <name>`: embedding model. Defaults to `AIONIS_EMBEDDING_MODEL`.
 - `--api-key-var <name>`: environment variable containing the API key. Defaults to `AIONIS_EMBEDDING_API_KEY`.
 - `--dimensions <n>`: optional embedding dimensions request parameter.
-- `--projection <plain|structured>`: embedding text projection. `plain` embeds the raw summary/query text; `structured` embeds labelled memory-document and retrieval-query text. Defaults to `structured`.
+- `--projection <plain|structured>`: embedding text projection. `plain` embeds compact search text; `structured` uses the SDK `buildAionisEmbeddingDocument` and `buildAionisEmbeddingQuery` contract. Defaults to `structured`.
 - `--query-instruct <text>`: optional query instruction for providers that support query-side instructions.
 - `--nodes <n>`: generated Substrate nodes.
 - `--scopes <n>`: generated scopes.
@@ -190,16 +190,16 @@ Important fields:
 - `embedding_usage`: provider requests, embedded text count, input character count, provider token count when exposed, and failed request count.
 - `zvec_health`: missing, orphan, and stale sidecar diagnostics.
 
-Current DashScope native `text-embedding-v4` smoke results on this fixture:
+Current DashScope native `text-embedding-v4` smoke results with the SDK
+projection on this fixture:
 
 | Projection | Dimension | Raw Top-1 | Raw Top-K | Final Top-K | Lexical Top-K |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `plain` | 1024 | 25% | 100% | 75% | 70% |
-| `structured` + query/document | 1024 | 65% | 100% | 85% | 70% |
-| `structured` + query/document | 2048 | 65% | 100% | 85% | 70% |
+| `plain` | 1024 | 40% | 100% | 75% | 70% |
+| `structured` + query/document | 1024 | 45% | 100% | 85% | 70% |
 
-The useful gain comes from the query/document projection contract, not from
-larger vector dimensionality on this fixture.
+The useful gain comes from the SDK query/document projection contract instead
+of changing Substrate's final admission or search filters.
 
 If raw Zvec hit rate is strong but final Substrate hit rate is weaker, the provider embeddings are finding useful candidates but the final canonical scorer is still acting as a lexical/structured gate. That is a search-contract boundary, not a provider failure.
 

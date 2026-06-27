@@ -10,6 +10,14 @@ export {
   ZvecCandidateIndex,
   type ZvecCandidateIndexOptions,
 } from "./zvec-candidate-index.ts";
+export {
+  AIONIS_EMBEDDING_PROJECTION_VERSION,
+  buildAionisEmbeddingDocument,
+  buildAionisEmbeddingQuery,
+  type AionisEmbeddingDocumentOptions,
+  type AionisEmbeddingProjectionMode,
+  type AionisEmbeddingQueryOptions,
+} from "./embedding-projection.ts";
 export { openFileAionisSubstrate, type FileAionisSubstrateOptions } from "./file-substrate.ts";
 export { openSqliteAionisSubstrate, type SqliteAionisSubstrateOptions } from "./sqlite-substrate.ts";
 export {

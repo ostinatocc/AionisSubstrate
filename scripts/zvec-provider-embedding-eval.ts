@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import {
   createZvecCandidateIndex,
+  AIONIS_EMBEDDING_PROJECTION_VERSION,
+  buildAionisEmbeddingDocument,
+  buildAionisEmbeddingQuery,
   openSqliteAionisSubstrate,
   type AionisCandidateIndex,
   type AionisCandidateIndexHealthReport,
@@ -482,30 +485,6 @@ class EmbeddingClient {
   }
 }
 
-function nodeText(node: AionisMemoryNode | AionisMemoryNodeInput): string {
-  return [
-    node.title ?? "",
-    node.summary,
-    node.kind,
-    node.lifecycle ?? "",
-    node.authority ?? "",
-    ...(node.targetFiles ?? []),
-  ].filter(Boolean).join(" ");
-}
-
-function targetEmbeddingText(item: SemanticCase, options: EvalOptions): string {
-  if (options.projection === "plain") return `${item.domain}\n${item.summary}\n${item.targetFile}`;
-  return [
-    "aionis_substrate_memory_document",
-    `domain: ${item.domain}`,
-    "memory_kind: procedure",
-    "lifecycle: active",
-    "authority: trusted",
-    `summary: ${item.summary}`,
-    `target_file: ${item.targetFile}`,
-  ].join("\n");
-}
-
 function decoySummary(item: SemanticCase, index: number, options: EvalOptions): string {
   return [
     `Decoy memory for ${item.domain}.`,
@@ -514,29 +493,79 @@ function decoySummary(item: SemanticCase, index: number, options: EvalOptions): 
   ].join(" ");
 }
 
-function decoyEmbeddingText(item: SemanticCase, index: number, options: EvalOptions): string {
-  const summary = decoySummary(item, index, options);
-  if (options.projection === "plain") return `${item.domain}\n${summary}\n${item.targetFile}`;
-  const archived = index % 17 === 0;
-  const stale = index % 7 === 0;
-  return [
-    "aionis_substrate_memory_document",
-    `domain: ${item.domain}`,
-    `memory_kind: ${archived ? "trace_pointer" : stale ? "claim" : "fact"}`,
-    `lifecycle: ${archived ? "archived" : stale ? "contested" : "active"}`,
-    `authority: ${archived ? "trusted" : stale ? "advisory" : "trusted"}`,
-    `summary: ${summary}`,
-    `target_file: ${item.targetFile}`,
-  ].join("\n");
+function queryEmbeddingText(query: string, options: EvalOptions): string {
+  return buildAionisEmbeddingQuery(query, {
+    projection: options.projection,
+    task: "retrieve the memory document that answers this implementation question",
+  });
 }
 
-function queryEmbeddingText(query: string, options: EvalOptions): string {
-  if (options.projection === "plain") return query;
-  return [
-    "aionis_substrate_retrieval_query",
-    "task: retrieve the memory document that answers this implementation question",
-    `query: ${query}`,
-  ].join("\n");
+function targetNodeInput(item: SemanticCase, index: number, scope: string, embedding?: number[]): AionisMemoryNodeInput {
+  const node: AionisMemoryNodeInput = {
+    id: `target-${item.slug}`,
+    scope,
+    kind: "procedure",
+    title: `Procedure: ${item.domain}`,
+    summary: item.summary,
+    lifecycle: "active",
+    authority: "trusted",
+    confidence: 0.9,
+    targetFiles: [item.targetFile],
+    metadata: {
+      provider_eval_role: "target",
+      provider_eval_slug: item.slug,
+      provider_eval_domain: item.domain,
+    },
+    createdAt: new Date(Date.UTC(2026, 5, 1, 0, index, 0)).toISOString(),
+    updatedAt: new Date(Date.UTC(2026, 5, 1, 0, index, 30)).toISOString(),
+  };
+  if (embedding) {
+    node.metadata = {
+      ...node.metadata,
+      embedding,
+    };
+  }
+  return node;
+}
+
+function decoyNodeInput(item: SemanticCase, index: number, options: EvalOptions, embedding?: number[]): AionisMemoryNodeInput {
+  const scope = `provider-scope-${index % options.scopes}`;
+  const stale = index % 7 === 0;
+  const archived = index % 17 === 0;
+  const node: AionisMemoryNodeInput = {
+    id: `decoy-${index}`,
+    scope,
+    kind: archived ? "trace_pointer" : stale ? "claim" : "fact",
+    title: `Decoy: ${item.domain} ${index}`,
+    summary: decoySummary(item, index, options),
+    lifecycle: archived ? "archived" : stale ? "contested" : "active",
+    authority: archived ? "trusted" : stale ? "advisory" : "trusted",
+    confidence: archived ? 0.8 : stale ? 0.52 : 0.68,
+    targetFiles: [item.targetFile],
+    payloadRef: archived ? `file://provider-eval/${index}.log` : null,
+    metadata: {
+      provider_eval_role: "decoy",
+      provider_eval_slug: item.slug,
+      provider_eval_domain: item.domain,
+    },
+    createdAt: new Date(Date.UTC(2026, 5, 1, 1, index % 60, 0)).toISOString(),
+    updatedAt: new Date(Date.UTC(2026, 5, 1, 1, index % 60, 30)).toISOString(),
+  };
+  if (embedding) {
+    node.metadata = {
+      ...node.metadata,
+      embedding_model: options.model,
+      embedding,
+    };
+  }
+  return node;
+}
+
+function documentEmbeddingText(node: AionisMemoryNodeInput, options: EvalOptions): string {
+  return buildAionisEmbeddingDocument(node, {
+    projection: options.projection,
+    metadataKeys: ["provider_eval_domain"],
+  });
 }
 
 function buildCorpus(options: EvalOptions, client: EmbeddingClient): { nodes: AionisMemoryNodeInput[]; probes: QueryProbe[] } {
@@ -547,55 +576,17 @@ function buildCorpus(options: EvalOptions, client: EmbeddingClient): { nodes: Ai
     const item = SEMANTIC_CASES[index];
     const scope = `provider-scope-${index % options.scopes}`;
     const id = `target-${item.slug}`;
-    const node: AionisMemoryNodeInput = {
-      id,
-      scope,
-      kind: "procedure",
-      title: `Procedure: ${item.domain}`,
-      summary: item.summary,
-      lifecycle: "active",
-      authority: "trusted",
-      confidence: 0.9,
-      targetFiles: [item.targetFile],
-      metadata: {
-        provider_eval_role: "target",
-        provider_eval_slug: item.slug,
-        embedding_model: options.model,
-        embedding: client.vectorFor(targetEmbeddingText(item, options), "db"),
-      },
-      createdAt: new Date(Date.UTC(2026, 5, 1, 0, index, 0)).toISOString(),
-      updatedAt: new Date(Date.UTC(2026, 5, 1, 0, index, 30)).toISOString(),
-    };
+    const baseNode = targetNodeInput(item, index, scope);
+    const node = targetNodeInput(item, index, scope, client.vectorFor(documentEmbeddingText(baseNode, options), "db"));
+    node.metadata = { ...node.metadata, embedding_model: options.model };
     nodes.push(node);
     probes.push({ scope, expectedId: id, query: item.query });
   }
 
   for (let index = nodes.length; index < options.nodes; index += 1) {
     const item = SEMANTIC_CASES[index % SEMANTIC_CASES.length];
-    const scope = `provider-scope-${index % options.scopes}`;
-    const stale = index % 7 === 0;
-    const archived = index % 17 === 0;
-    const text = decoySummary(item, index, options);
-    nodes.push({
-      id: `decoy-${index}`,
-      scope,
-      kind: archived ? "trace_pointer" : stale ? "claim" : "fact",
-      title: `Decoy: ${item.domain} ${index}`,
-      summary: text,
-      lifecycle: archived ? "archived" : stale ? "contested" : "active",
-      authority: archived ? "trusted" : stale ? "advisory" : "trusted",
-      confidence: archived ? 0.8 : stale ? 0.52 : 0.68,
-      targetFiles: [item.targetFile],
-      payloadRef: archived ? `file://provider-eval/${index}.log` : null,
-      metadata: {
-        provider_eval_role: "decoy",
-        provider_eval_slug: item.slug,
-        embedding_model: options.model,
-        embedding: client.vectorFor(decoyEmbeddingText(item, index, options), "db"),
-      },
-      createdAt: new Date(Date.UTC(2026, 5, 1, 1, index % 60, 0)).toISOString(),
-      updatedAt: new Date(Date.UTC(2026, 5, 1, 1, index % 60, 30)).toISOString(),
-    });
+    const baseNode = decoyNodeInput(item, index, options);
+    nodes.push(decoyNodeInput(item, index, options, client.vectorFor(documentEmbeddingText(baseNode, options), "db")));
   }
   return { nodes, probes };
 }
@@ -604,11 +595,11 @@ function corpusDbEmbeddingTexts(options: EvalOptions): string[] {
   const texts: string[] = [];
   for (let index = 0; index < options.queries; index += 1) {
     const item = SEMANTIC_CASES[index];
-    texts.push(targetEmbeddingText(item, options));
+    texts.push(documentEmbeddingText(targetNodeInput(item, index, `provider-scope-${index % options.scopes}`), options));
   }
   for (let index = options.queries; index < options.nodes; index += 1) {
     const item = SEMANTIC_CASES[index % SEMANTIC_CASES.length];
-    texts.push(decoyEmbeddingText(item, index, options));
+    texts.push(documentEmbeddingText(decoyNodeInput(item, index, options), options));
   }
   return texts;
 }
@@ -753,6 +744,7 @@ async function main(): Promise<void> {
         model: options.model,
         dimensions: options.dimensions ?? null,
         projection: options.projection,
+        projection_version: AIONIS_EMBEDDING_PROJECTION_VERSION,
         query_instruct: options.queryInstruct ?? null,
         api_key_var: options.apiKeyVar,
       },

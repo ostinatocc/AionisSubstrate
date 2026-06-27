@@ -14,6 +14,7 @@ All notable changes to Aionis Substrate are documented here.
 - Provider-backed Zvec embedding eval that calls OpenAI-compatible or MiniMax native embeddings endpoints and reports raw Zvec candidate hit rate separately from final Substrate search hit rate.
 - Candidate-index semantic fusion that lets Zvec/provider candidates influence final `searchNodes()` ranking without bypassing scope, lifecycle, authority, confidence, or target-file filters.
 - DashScope native `text-embedding-v4` provider eval with query/document projection, optional query instructions, and projection-aware reports.
+- Stable SDK embedding projection helpers for provider hosts: `buildAionisEmbeddingDocument`, `buildAionisEmbeddingQuery`, and `AIONIS_EMBEDDING_PROJECTION_VERSION`.
 
 ## 0.1.4 - 2026-06-26
 

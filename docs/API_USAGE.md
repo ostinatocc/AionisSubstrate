@@ -218,6 +218,60 @@ const results = await store.searchNodes({
 
 `createZvecCandidateIndex` is a candidate-index adapter. File/SQLite remain the truth store, and queries without `queryVector` fall back to deterministic Substrate search.
 
+### Embedding Projection
+
+Substrate does not call embedding providers by itself, but it exposes a stable
+projection contract for hosts that want to generate vectors consistently:
+
+```ts
+import {
+  buildAionisEmbeddingDocument,
+  buildAionisEmbeddingQuery,
+  createZvecCandidateIndex,
+  openSqliteAionisSubstrate,
+} from "@aionis/substrate";
+
+const memory = {
+  id: "route-current",
+  scope: "repo-a",
+  kind: "procedure" as const,
+  summary: "Use src/runtime.ts after verifier passed.",
+  lifecycle: "active" as const,
+  authority: "trusted" as const,
+  confidence: 0.95,
+  targetFiles: ["src/runtime.ts"],
+};
+
+const documentText = buildAionisEmbeddingDocument(memory);
+const documentVector = await embedAsDocument(documentText);
+
+const candidateIndex = createZvecCandidateIndex({
+  path: "./substrate.zvec",
+  embeddingModel: "text-embedding-v4",
+  vectorForQuery: async (input) => {
+    if (!input.query) return null;
+    return await embedAsQuery(buildAionisEmbeddingQuery(input.query));
+  },
+});
+
+const store = await openSqliteAionisSubstrate({
+  path: "./substrate.sqlite",
+  candidateIndex,
+});
+
+await store.putNode({
+  ...memory,
+  metadata: {
+    embedding_model: "text-embedding-v4",
+    embedding: documentVector,
+  },
+});
+```
+
+Use the same projection version for writes and searches. The structured
+projection labels memory documents and retrieval queries separately, which is
+useful for providers that distinguish document and query embeddings.
+
 ## Preview Context
 
 ```ts
