@@ -37,6 +37,7 @@
     "check:runtime-live-sidecar-soak": "node scripts/runtime-live-sidecar-soak.ts",
     "check:runtime-live-sidecar-recovery": "node scripts/runtime-live-sidecar-recovery-check.ts",
     "check:runtime-local-evidence-chain": "node scripts/runtime-local-evidence-chain.ts",
+    "check:runtime-real-project-flow": "node scripts/runtime-real-project-flow-report.ts",
     "check:runtime-product-bridge": "node scripts/runtime-product-bridge-gate.ts",
     "check:runtime-zvec-index": "node scripts/runtime-zvec-candidate-index-check.ts",
     "check:zvec-provider-embedding": "node scripts/zvec-provider-embedding-eval.ts",

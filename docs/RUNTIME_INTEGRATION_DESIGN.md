@@ -142,6 +142,7 @@ An integration change is acceptable only when these checks pass.
 | --- | --- | --- |
 | Local type and adapter checks | `npm run typecheck && npm test` | Store contracts and adapter parity hold. |
 | Local evidence chain | `npm run check:runtime-local-evidence-chain` | Runtime mirror, checkpoint idempotency, backup verification, restore-plan, and restored context equivalence hold as one local chain. |
+| Real Runtime project-flow report | `npm run check:runtime-real-project-flow -- --root /path/to/runtime/.tmp` | Batch local evidence-chain validation across real Runtime SQLite scopes and writes JSON/Markdown reports. |
 | Runtime mirror recovery | `npm run check:runtime-live-sidecar-recovery` | Checkpoint failure modes do not corrupt target state. |
 | Runtime mirror soak | `npm run check:runtime-live-sidecar-soak` | Repeated evidence append and checkpoint skip behavior hold. |
 | Published install smoke | `npm run check:registry-install && npm run check:published-runtime-smoke` | Registry package installs and imports Runtime fixtures. |
@@ -174,6 +175,40 @@ It has also been run against a real focused Runtime Lite SQLite source under
 - backup verified;
 - restore-plan accepted;
 - restored context equivalent to mirrored context.
+
+For a broader local evidence run across real Runtime SQLite scopes:
+
+```bash
+npm run check:runtime-real-project-flow -- \
+  --root /path/to/AionisRuntime-focused/.tmp \
+  --max-files 8 \
+  --max-scopes 8 \
+  --min-nodes 20
+```
+
+The script writes `summary.json` and `summary.md` under
+`reports/runtime-real-project-flow-*`. The report validates Substrate as a local
+durable evidence layer; it does not claim downstream Agent task success.
+
+Latest local real Runtime run:
+
+```text
+reports/runtime-real-project-flow-2026-06-27T13-01-54-288Z/summary.md
+```
+
+Result:
+
+- 30 Runtime SQLite files discovered;
+- 8 Runtime SQLite files used;
+- 258 scope candidates discovered;
+- 8/8 scope cases passed;
+- 1120 Runtime nodes imported into isolated Substrate stores;
+- 41 Runtime relations imported;
+- 8/8 source SQLite files unchanged;
+- 8/8 second mirror passes idempotent;
+- 8/8 backups verified;
+- 8/8 restore-plans accepted;
+- 8/8 restored context buckets equivalent to mirrored context buckets.
 
 `@aionis/substrate@0.1.7` passed a published-package Runtime bridge corpus soak against real focused Runtime SQLite files:
 
