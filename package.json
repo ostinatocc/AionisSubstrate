@@ -46,6 +46,7 @@
     "check:registry-install": "node scripts/registry-install-smoke.ts",
     "check:published-runtime-smoke": "node scripts/published-runtime-smoke.ts",
     "check:published-runtime-bridge": "node scripts/published-runtime-bridge.ts",
+    "check:published-runtime-bridge-corpus": "node scripts/published-runtime-bridge-corpus.ts",
     "check:scale": "node scripts/scale-test.ts",
     "check:zvec-scale": "node scripts/zvec-scale-test.ts",
     "example:basic": "npm run build && node examples/basic/index.mjs",

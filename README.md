@@ -379,11 +379,14 @@ npm run check:registry-install
 npm run check:published-runtime-smoke
 AIONIS_RUNTIME_SQLITE_SOURCE=/path/to/aionis-lite.sqlite npm run check:published-runtime-bridge
 AIONIS_RUNTIME_SQLITE_SOURCE=/path/to/aionis-lite.sqlite npm run check:published-runtime-bridge -- --live-passes 5
+npm run check:published-runtime-bridge-corpus -- --root /path/to/runtime/.tmp --max-files 5 --live-passes 3
 ```
 
 These commands install `@aionis/substrate@<package.json version>` from the npm registry into a fresh temporary project. `check:published-runtime-smoke` also creates a Runtime Lite SQLite fixture and verifies published-package snapshot import into a separate Substrate store.
 
 `check:published-runtime-bridge` is the real Runtime bridge gate. It reads the Runtime Lite SQLite source passed through `AIONIS_RUNTIME_SQLITE_SOURCE`, imports it into an isolated snapshot store, runs checkpointed `live-sidecar` into an isolated live store, verifies every pass after the first does not mutate the target, verifies snapshot/live event parity, and verifies the Runtime source file was not modified. Use `-- --live-passes N` for a short published-package idempotency soak against a real Runtime source.
+
+`check:published-runtime-bridge-corpus` installs the published package once, scans a directory of real Runtime Lite SQLite sources, and runs the same isolated bridge gate across multiple sources. It is the stronger post-publish check when you want to verify that Runtime bridge behavior is not tied to one SQLite file.
 
 ## Scale Smoke
 
