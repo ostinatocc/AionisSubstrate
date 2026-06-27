@@ -123,6 +123,8 @@ Checkpoint compaction is documented in [docs/CHECKPOINT_COMPACTION.md](docs/CHEC
 
 Runtime snapshot import is documented in [docs/RUNTIME_SNAPSHOT_IMPORT.md](docs/RUNTIME_SNAPSHOT_IMPORT.md).
 
+The product contract is documented in [docs/PRODUCT_CONTRACT.md](docs/PRODUCT_CONTRACT.md).
+
 Runtime live sidecar sync is documented in [docs/RUNTIME_LIVE_SIDECAR.md](docs/RUNTIME_LIVE_SIDECAR.md).
 
 Runtime Zvec candidate-index validation is documented in [docs/RUNTIME_ZVEC_CANDIDATE_INDEX.md](docs/RUNTIME_ZVEC_CANDIDATE_INDEX.md).
