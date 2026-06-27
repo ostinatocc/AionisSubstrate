@@ -123,7 +123,7 @@ The bridge reads Runtime evidence and writes an external Substrate store. Runtim
 
 ## Release-Level Guarantees
 
-For `@aionis/substrate@0.1.5`:
+For `@aionis/substrate@0.1.8`:
 
 - file and SQLite adapters preserve the same admission buckets for the same evidence;
 - invalid writes do not persist partial events;

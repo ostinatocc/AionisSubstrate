@@ -1,6 +1,6 @@
 # Aionis Runtime Integration Design
 
-Status: `0.1.7` integration boundary
+Status: `0.1.8` integration boundary
 
 This document defines how Aionis Substrate should be integrated with Aionis Runtime.
 
@@ -146,11 +146,11 @@ An integration change is acceptable only when these checks pass.
 | Published install smoke | `npm run check:registry-install && npm run check:published-runtime-smoke` | Registry package installs and imports Runtime fixtures. |
 | Real Runtime bridge | `npm run check:published-runtime-bridge-corpus -- --root /path/to/runtime/.tmp --max-files N --live-passes M` | Published package bridges multiple real Runtime SQLite sources without source mutation or duplicate mirror events. |
 
-The current `0.1.7` post-release bridge evidence is recorded in [POST_RELEASE_EVIDENCE.md](POST_RELEASE_EVIDENCE.md).
+The current published-package bridge evidence is recorded in [POST_RELEASE_EVIDENCE.md](POST_RELEASE_EVIDENCE.md).
 
 ## Current Evidence
 
-`@aionis/substrate@0.1.7` has passed a published-package Runtime bridge corpus soak against real focused Runtime SQLite files:
+`@aionis/substrate@0.1.7` passed a published-package Runtime bridge corpus soak against real focused Runtime SQLite files:
 
 - 30 SQLite files discovered;
 - 14 Runtime Lite SQLite files identified;

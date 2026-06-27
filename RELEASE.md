@@ -18,7 +18,7 @@ Run the full release gate:
 npm run check:release
 ```
 
-`check:release` includes the Runtime live sidecar soak check. To run that gate
+`check:release` includes the Runtime mirror soak check. To run that gate
 directly:
 
 ```bash
@@ -44,8 +44,8 @@ npm run check:runtime-product-bridge -- \
 ```
 
 This gate starts focused Runtime with isolated Lite SQLite paths and validates
-external Substrate dual-write, reopen parity, chain probes, read-only
-`live-sidecar` mirroring, checkpoint idempotency, and mirrored context parity.
+external Substrate dual-write, reopen parity, chain probes, read-only Runtime
+mirror sync, checkpoint idempotency, and mirrored context parity.
 It writes `product-bridge-gate-summary.json` and exits non-zero on failure.
 
 Run the basic package example:
@@ -89,8 +89,8 @@ npm run check:published-runtime-smoke
 Both commands install `@aionis/substrate@<package.json version>` from the npm registry into a temporary project. They validate the published package, not local source or a local tarball. To verify another package spec, set:
 
 ```bash
-AIONIS_SUBSTRATE_REGISTRY_PACKAGE=@aionis/substrate@0.1.0 npm run check:registry-install
-AIONIS_SUBSTRATE_REGISTRY_PACKAGE=@aionis/substrate@0.1.0 npm run check:published-runtime-smoke
+AIONIS_SUBSTRATE_REGISTRY_PACKAGE=@aionis/substrate@0.1.8 npm run check:registry-install
+AIONIS_SUBSTRATE_REGISTRY_PACKAGE=@aionis/substrate@0.1.8 npm run check:published-runtime-smoke
 ```
 
 ## Git
@@ -98,6 +98,6 @@ AIONIS_SUBSTRATE_REGISTRY_PACKAGE=@aionis/substrate@0.1.0 npm run check:publishe
 Create a release commit and tag:
 
 ```bash
-git tag v0.1.0
+git tag v0.1.8
 git push origin main --tags
 ```

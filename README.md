@@ -9,7 +9,7 @@ Aionis Runtime can use this layer as a durable governed memory substrate. Agents
 ## Status
 
 - Package: `@aionis/substrate`
-- Version: `0.1.7`
+- Version: `0.1.8`
 - Runtime: Node 24+
 - License: Apache-2.0
 - Current adapters: file store and SQLite
@@ -108,8 +108,8 @@ This first version ships two embedded adapters:
 - `createZvecCandidateIndex` provides an optional Zvec-backed candidate index for local vector preselection. Substrate fuses candidate-index rank into final search while preserving scope, lifecycle, authority, confidence, and target-file filters. It requires installing `@zvec/zvec`; file/SQLite remain the truth store.
 - `buildAionisEmbeddingDocument` and `buildAionisEmbeddingQuery` expose the stable SDK projection for hosts that generate provider vectors before writing nodes or querying Zvec.
 - `importRuntimeLiteSnapshot` can import an existing Runtime Lite SQLite database into an isolated Substrate store through a read-only source connection.
-- `runRuntimeLiveSidecarOnce`, `runRuntimeLiveSidecarWatch`, and `aionis-substrate live-sidecar` incrementally mirror Runtime Lite evidence into a separate Substrate target through a checkpoint file.
-- `aionis-substrate mirror-runtime` exposes the same checkpointed read-only Runtime evidence mirror as the formal product entry point.
+- `runRuntimeLiveSidecarOnce`, `runRuntimeLiveSidecarWatch`, and `aionis-substrate mirror-runtime` incrementally mirror Runtime Lite evidence into a separate Substrate target through a checkpoint file.
+- `aionis-substrate live-sidecar` remains available as a lower-level command name for existing scripts.
 - `aionis-substrate restore-plan` verifies backups and prints a read-only restore/migration plan without writing a target.
 
 This is intentionally small. It proves the substrate contract without changing the existing Aionis Runtime.
@@ -350,8 +350,8 @@ npm run check:runtime-product-bridge -- \
 This is the product-level bridge check. It runs real focused Runtime
 `observe -> guide -> feedback -> measure`, verifies external Substrate
 dual-write parity, closes and reopens the Substrate store, runs lifecycle/relation
-chain probes, mirrors the Runtime Lite SQLite source through read-only
-`live-sidecar`, re-runs `live-sidecar` to prove checkpoint idempotency, and then
+chain probes, mirrors the Runtime Lite SQLite source through read-only Runtime
+mirror sync, repeats the mirror pass to prove checkpoint idempotency, and then
 compares the mirrored Substrate `previewContext` buckets back against Runtime
 guide surfaces. The default gate runs 4 fixed scenarios, 96 deterministic
 generated scenarios, and 16 chain probes. It writes a single
@@ -384,7 +384,7 @@ npm run check:release
 
 `check:install-smoke` packs the built package, installs that tarball into a fresh temporary project, imports `@aionis/substrate`, and runs real file/SQLite store operations from the installed package.
 
-`check:runtime-live-sidecar-soak` creates a real Runtime Lite SQLite fixture, repeatedly appends execution-memory rows, and verifies checkpointed live-sidecar watch sync into a separate real Substrate SQLite store.
+`check:runtime-live-sidecar-soak` creates a real Runtime Lite SQLite fixture, repeatedly appends execution-memory rows, and verifies checkpointed Runtime mirror watch sync into a separate real Substrate SQLite store.
 
 `check:runtime-live-sidecar-recovery` injects missing checkpoint, changed evidence after missing checkpoint, corrupt checkpoint, malformed fingerprint, source/scope mismatch, and empty-target recovery scenarios. It verifies the sidecar repairs recoverable checkpoint loss without duplicate events, still applies real source changes, fails closed for unsafe checkpoint state, and releases locks on failure.
 

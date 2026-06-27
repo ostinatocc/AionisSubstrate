@@ -4,8 +4,13 @@ All notable changes to Aionis Substrate are documented here.
 
 ## Unreleased
 
+## 0.1.8 - 2026-06-27
+
 ### Added
 
+- `mirror-runtime` CLI entrypoint as the product-facing Runtime evidence mirror.
+- `restore-plan` CLI entrypoint for read-only backup verification and migration planning before restore.
+- Runtime mirror integration documentation that keeps Runtime guide/admission authority in Runtime while Substrate mirrors evidence externally.
 - Live sidecar integration example that builds a real Runtime Lite SQLite source, mirrors it through the checkpointed sidecar, and previews governed context buckets.
 - Optional candidate index boundary with rebuild, verify, write-through node sync, and candidate-id narrowing before canonical Substrate scoring.
 - Optional Zvec-backed candidate index adapter for local vector preselection while keeping file/SQLite as truth storage.
@@ -19,6 +24,7 @@ All notable changes to Aionis Substrate are documented here.
 
 ### Changed
 
+- Runtime mirror docs now use `mirror-runtime` as the primary product command while retaining `live-sidecar` as a lower-level command name for existing scripts.
 - Runtime live sidecar repairs missing or stale checkpoints from matching target evidence without appending duplicate events, while still applying changed Runtime evidence.
 
 ## 0.1.4 - 2026-06-26
