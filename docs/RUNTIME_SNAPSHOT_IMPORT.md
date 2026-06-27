@@ -14,7 +14,7 @@ The importer exists to answer one engineering question:
 
 > Can the Substrate contract represent Runtime memory evidence, relations, feedback, and decision traces without polluting the focused Runtime?
 
-For repeated checkpointed mirroring, use the separate Runtime live sidecar documented in
+For repeated checkpointed mirroring, use the separate Runtime mirror documented in
 [RUNTIME_LIVE_SIDECAR.md](RUNTIME_LIVE_SIDECAR.md). Snapshot import is a one-shot copy path.
 
 ## Source Tables

@@ -26,7 +26,7 @@ Substrate stores memory as append-only evidence and derived read models.
 | Preview | Read-only context compilation for UI, planning, or dry runs | `previewContext()` |
 | Receipt | Auditable record of a context decision | `compileContext()` |
 | Backup | Checksum-covered export and restore of evidence | `exportBackup`, `restore...` |
-| Runtime bridge | Read-only import or checkpointed sidecar mirror from Aionis Runtime Lite SQLite | `importRuntimeLiteSnapshot`, `runRuntimeLiveSidecarOnce` |
+| Runtime bridge | Read-only import or checkpointed Runtime mirror from Aionis Runtime Lite SQLite | `importRuntimeLiteSnapshot`, `runRuntimeLiveSidecarOnce` |
 | Semantic candidate index | Optional Zvec-backed candidate narrowing before deterministic admission | `createZvecCandidateIndex` |
 
 ## Admission Semantics
@@ -112,7 +112,7 @@ npx aionis-substrate import-runtime-snapshot \
   --target ./substrate.sqlite \
   --adapter sqlite
 
-npx aionis-substrate live-sidecar \
+npx aionis-substrate mirror-runtime \
   --source ./runtime.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -130,7 +130,6 @@ For `@aionis/substrate@0.1.5`:
 - controlled forgetting is a lifecycle transition;
 - backup restore verifies event integrity;
 - Runtime snapshot import is read-only against Runtime source SQLite;
-- live sidecar uses checkpoint fingerprints for repeated sync;
+- Runtime mirror uses checkpoint fingerprints for repeated sync;
 - published package install smoke verifies CLI and SDK import surfaces;
 - structured embedding projection is exposed as public SDK API.
-

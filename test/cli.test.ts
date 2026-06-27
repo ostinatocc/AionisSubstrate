@@ -32,7 +32,9 @@ test("published CLI entrypoints expose root and sidecar help", () => {
   });
   assert.match(rootHelp, /Aionis Substrate CLI/);
   assert.match(rootHelp, /aionis-substrate sidecar/);
+  assert.match(rootHelp, /mirror-runtime/);
   assert.match(rootHelp, /live-sidecar/);
+  assert.match(rootHelp, /restore-plan/);
 
   const sidecarHelp = execFileSync("node", ["src/cli.ts", "sidecar", "--help"], {
     encoding: "utf8",
@@ -49,6 +51,13 @@ test("published CLI entrypoints expose root and sidecar help", () => {
   });
   assert.match(liveSidecarHelp, /Runtime live sidecar/);
   assert.match(liveSidecarHelp, /--checkpoint/);
+
+  const mirrorRuntimeHelp = execFileSync("node", ["src/cli.ts", "mirror-runtime", "--help"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  assert.match(mirrorRuntimeHelp, /Runtime mirror/);
+  assert.match(mirrorRuntimeHelp, /does not change Runtime guide behavior/);
 });
 
 test("CLI store commands inspect preview backup restore and compact a real SQLite store", async () => {
@@ -116,6 +125,21 @@ test("CLI store commands inspect preview backup restore and compact a real SQLit
     };
     assert.equal(backup.ok, true);
     assert.equal(backup.eventCount, 3);
+
+    const restorePlan = runCli(["restore-plan", "--input", backupPath, "--adapter", "sqlite", "--path", join(dir, "planned.sqlite")]) as {
+      contract_version: string;
+      read_only: boolean;
+      would_restore: boolean;
+      counts: { nodes: number; relations: number; scopes: string[] };
+      target: { adapter: string; path: string };
+    };
+    assert.equal(restorePlan.contract_version, "aionis_substrate_restore_plan_report_v1");
+    assert.equal(restorePlan.read_only, true);
+    assert.equal(restorePlan.would_restore, true);
+    assert.equal(restorePlan.counts.nodes, 2);
+    assert.equal(restorePlan.counts.relations, 1);
+    assert.deepEqual(restorePlan.counts.scopes, ["repo-a"]);
+    assert.equal(restorePlan.target.adapter, "sqlite");
 
     const restoredPath = join(dir, "restored.sqlite");
     const restore = runCli(["restore", "--adapter", "sqlite", "--path", restoredPath, "--input", backupPath]) as {
@@ -229,14 +253,14 @@ test("CLI imports a Runtime Lite snapshot into a separate Substrate store", asyn
   });
 });
 
-test("CLI live-sidecar incrementally mirrors Runtime Lite evidence with a checkpoint", async () => {
+test("CLI mirror-runtime incrementally mirrors Runtime Lite evidence with a checkpoint", async () => {
   await withTempDir(async (dir) => {
     const source = join(dir, "runtime.sqlite");
     const target = join(dir, "substrate.sqlite");
     const checkpoint = join(dir, "checkpoint.json");
     createRuntimeLiteSource(source);
     const first = runCli([
-      "live-sidecar",
+      "mirror-runtime",
       "--source",
       source,
       "--target",
@@ -257,7 +281,7 @@ test("CLI live-sidecar incrementally mirrors Runtime Lite evidence with a checkp
     assert.equal(first.apply_summary.nodes.unchanged, 0);
 
     const second = runCli([
-      "live-sidecar",
+      "mirror-runtime",
       "--source",
       source,
       "--target",

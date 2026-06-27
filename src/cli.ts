@@ -44,6 +44,10 @@ type RestoreArgs = StoreArgs & {
   overwrite?: boolean;
 };
 
+type RestorePlanArgs = StoreArgs & {
+  input?: string;
+};
+
 type CompactArgs = StoreArgs;
 
 type RuntimeImportArgs = {
@@ -88,10 +92,12 @@ function rootUsage(): string {
     "Usage:",
     "  aionis-substrate sidecar --source <runtime.sqlite> --scope <scope> [--reference <guide.json>]",
     "  aionis-substrate import-runtime-snapshot --source <runtime.sqlite> --target <store> --adapter sqlite",
+    "  aionis-substrate mirror-runtime --source <runtime.sqlite> --target <store> --adapter sqlite --checkpoint <checkpoint.json> [--watch --iterations <n>]",
     "  aionis-substrate live-sidecar --source <runtime.sqlite> --target <store> --adapter sqlite --checkpoint <checkpoint.json> [--watch --iterations <n>]",
     "  aionis-substrate preview-context --adapter sqlite --path <store> --scope <scope>",
     "  aionis-substrate inspect --adapter sqlite --path <store> [--scope <scope>]",
     "  aionis-substrate backup --adapter sqlite --path <store> --output <backup.json>",
+    "  aionis-substrate restore-plan --input <backup.json> [--adapter sqlite --path <target>]",
     "  aionis-substrate restore --adapter sqlite --path <store> --input <backup.json>",
     "  aionis-substrate compact --adapter sqlite --path <store>",
     "  aionis-substrate sidecar --source-root <runtime-root> --reference-root <reference-root>",
@@ -99,10 +105,12 @@ function rootUsage(): string {
     "Commands:",
     "  sidecar                  Run read-only Runtime sidecar stabilization checks.",
     "  import-runtime-snapshot  Import a Runtime Lite SQLite snapshot into a separate Substrate store.",
+    "  mirror-runtime           Product alias for checkpointed read-only Runtime evidence mirroring.",
     "  live-sidecar             Incrementally mirror Runtime Lite evidence into a Substrate store.",
     "  inspect                  Inspect store metadata and scoped audit counts.",
     "  preview-context          Compile governed buckets without writing a decision receipt.",
     "  backup                   Export and verify a checksum-covered event backup.",
+    "  restore-plan             Verify a backup and print a read-only restore/migration plan.",
     "  restore                  Restore a checksum-verified backup into an empty target.",
     "  compact                  Rewrite event history into a checkpoint without changing state.",
     "  help                     Show this help message.",
@@ -124,6 +132,7 @@ function storeUsage(command: string): string {
     "  aionis-substrate inspect --adapter sqlite --path ./substrate.sqlite --scope repo-a",
     "  aionis-substrate preview-context --adapter file --path ./substrate-store --scope repo-a --query runtime",
     "  aionis-substrate backup --adapter sqlite --path ./substrate.sqlite --output ./backup.json",
+    "  aionis-substrate restore-plan --input ./backup.json --adapter sqlite --path ./restored.sqlite",
     "  aionis-substrate restore --adapter sqlite --path ./restored.sqlite --input ./backup.json",
     "  aionis-substrate compact --adapter sqlite --path ./substrate.sqlite",
   ].join("\n");
@@ -140,15 +149,19 @@ function runtimeImportUsage(): string {
   ].join("\n");
 }
 
-function runtimeLiveSidecarUsage(): string {
+function runtimeLiveSidecarUsage(command = "live-sidecar"): string {
+  const title = command === "mirror-runtime"
+    ? "Aionis Substrate Runtime mirror"
+    : "Aionis Substrate Runtime live sidecar";
   return [
-    "Aionis Substrate Runtime live sidecar",
+    title,
     "",
     "Usage:",
-    "  aionis-substrate live-sidecar --source <runtime.sqlite> --target <store> --adapter <sqlite|file> --checkpoint <checkpoint.json> [--scope <scope>] [--limit <n>]",
+    `  aionis-substrate ${command} --source <runtime.sqlite> --target <store> --adapter <sqlite|file> --checkpoint <checkpoint.json> [--scope <scope>] [--limit <n>]`,
     "",
     "The Runtime SQLite source is opened read-only. The sidecar writes only the separate Substrate target",
     "and an explicit checkpoint file. Run it repeatedly from a scheduler to sync new Runtime evidence.",
+    "It does not change Runtime guide behavior, Runtime SQLite, or Runtime learning policy.",
     "",
     "Options:",
     "  --dry-run                Report what would be applied without writing target or checkpoint.",
@@ -356,6 +369,32 @@ function parseRestoreArgs(argv: string[]): RestoreArgs {
   return args;
 }
 
+function parseRestorePlanArgs(argv: string[]): RestorePlanArgs {
+  const args: RestorePlanArgs = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    const flag = argv[i];
+    const value = argv[i + 1];
+    if (flag === "--adapter") {
+      args.adapter = parseAdapter(value);
+      i += 1;
+    } else if (flag === "--path") {
+      if (!value) throw new Error("--path requires a value");
+      args.path = value;
+      i += 1;
+    } else if (flag === "--input") {
+      if (!value) throw new Error("--input requires a value");
+      args.input = value;
+      i += 1;
+    } else if (flag === "--help" || flag === "-h") {
+      console.log(storeUsage("restore-plan"));
+      process.exit(0);
+    } else {
+      throw new Error(`unknown restore-plan argument: ${flag}`);
+    }
+  }
+  return args;
+}
+
 function parseCompactArgs(argv: string[]): CompactArgs {
   const args: CompactArgs = {};
   for (let i = 0; i < argv.length; i += 1) {
@@ -411,7 +450,7 @@ function parseRuntimeImportArgs(argv: string[]): RuntimeImportArgs {
   return args;
 }
 
-function parseRuntimeLiveSidecarArgs(argv: string[]): RuntimeLiveSidecarArgs {
+function parseRuntimeLiveSidecarArgs(argv: string[], command = "live-sidecar"): RuntimeLiveSidecarArgs {
   const args: RuntimeLiveSidecarArgs = {};
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
@@ -459,10 +498,10 @@ function parseRuntimeLiveSidecarArgs(argv: string[]): RuntimeLiveSidecarArgs {
     } else if (flag === "--no-lock") {
       args.lock = null;
     } else if (flag === "--help" || flag === "-h") {
-      console.log(runtimeLiveSidecarUsage());
+      console.log(runtimeLiveSidecarUsage(command));
       process.exit(0);
     } else {
-      throw new Error(`unknown live-sidecar argument: ${flag}`);
+      throw new Error(`unknown ${command} argument: ${flag}`);
     }
   }
   return args;
@@ -718,6 +757,48 @@ async function runRestore(argv: string[]): Promise<void> {
   }, null, 2));
 }
 
+async function runRestorePlan(argv: string[]): Promise<void> {
+  const args = parseRestorePlanArgs(argv);
+  if (!args.input) throw new Error("--input is required");
+  const input = resolve(args.input);
+  const target = args.path ? resolve(args.path) : null;
+  const backup = await readAionisSubstrateBackupFile(input);
+  const verification = verifyAionisSubstrateBackup(backup);
+  const snapshot = verification.snapshot;
+  console.log(JSON.stringify({
+    contract_version: "aionis_substrate_restore_plan_report_v1",
+    input,
+    target: target ? {
+      adapter: args.adapter ?? null,
+      path: target,
+    } : null,
+    read_only: true,
+    would_restore: verification.ok,
+    verification: {
+      ok: verification.ok,
+      errors: verification.errors,
+      schemaVersion: verification.schemaVersion,
+      eventCount: verification.eventCount,
+      lastSequence: verification.lastSequence,
+      eventsSha256: verification.eventsSha256,
+    },
+    source: backup.source,
+    counts: snapshot ? {
+      nodes: snapshot.nodes.length,
+      relations: snapshot.relations.length,
+      feedback: snapshot.feedback.length,
+      decisions: snapshot.decisions.length,
+      scopes: Array.from(new Set([
+        ...snapshot.nodes.map((node) => node.scope),
+        ...snapshot.relations.map((relation) => relation.scope),
+        ...snapshot.feedback.map((feedback) => feedback.scope),
+        ...snapshot.decisions.map((decision) => decision.scope),
+      ])).sort(),
+    } : null,
+  }, null, 2));
+  if (!verification.ok) process.exitCode = 1;
+}
+
 async function runCompact(argv: string[]): Promise<void> {
   const args = parseCompactArgs(argv);
   const store = await openExistingStore(args);
@@ -763,8 +844,8 @@ async function runRuntimeImport(argv: string[]): Promise<void> {
   }
 }
 
-async function runRuntimeLiveSidecar(argv: string[]): Promise<void> {
-  const args = parseRuntimeLiveSidecarArgs(argv);
+async function runRuntimeLiveSidecar(argv: string[], command = "live-sidecar"): Promise<void> {
+  const args = parseRuntimeLiveSidecarArgs(argv, command);
   if (!args.source) throw new Error("--source is required");
   if (!args.target) throw new Error("--target is required");
   if (!args.adapter) throw new Error("--adapter is required");
@@ -828,6 +909,10 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     await runRuntimeImport(argv.slice(1));
     return;
   }
+  if (command === "mirror-runtime") {
+    await runRuntimeLiveSidecar(argv.slice(1), "mirror-runtime");
+    return;
+  }
   if (command === "live-sidecar") {
     await runRuntimeLiveSidecar(argv.slice(1));
     return;
@@ -842,6 +927,10 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   }
   if (command === "backup") {
     await runBackup(argv.slice(1));
+    return;
+  }
+  if (command === "restore-plan") {
+    await runRestorePlan(argv.slice(1));
     return;
   }
   if (command === "restore") {

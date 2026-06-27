@@ -1,6 +1,7 @@
-# Runtime Live Sidecar
+# Runtime Mirror
 
-The Runtime live sidecar is an external, one-way bridge from an Aionis Runtime Lite SQLite database into an independent Aionis Substrate store.
+The Runtime mirror is an external, one-way bridge from an Aionis Runtime Lite
+SQLite database into an independent Aionis Substrate store.
 
 It exists for a narrow productization step:
 
@@ -9,18 +10,22 @@ It exists for a narrow productization step:
 - A checkpoint prevents replaying unchanged Runtime rows on every poll.
 - No Runtime table, source file, policy, or guide path is mutated.
 
-This is not a replacement for Runtime policy. It is a sidecar substrate sync primitive.
+This is not a replacement for Runtime policy. It is a sidecar substrate sync
+primitive.
 
 ## Command
 
 ```bash
-npx aionis-substrate live-sidecar \
+npx aionis-substrate mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
   --checkpoint ./runtime-live-checkpoint.json \
   --scope repo-a
 ```
+
+`mirror-runtime` is the product-facing command. `live-sidecar` remains accepted
+as the lower-level command name for existing scripts.
 
 Run the command repeatedly from a scheduler or host process. Each run:
 
@@ -35,7 +40,7 @@ Use `--adapter file` when the target is a file-backed Substrate directory.
 Use `--dry-run` to report what would be applied without writing the target or checkpoint:
 
 ```bash
-npx aionis-substrate live-sidecar \
+npx aionis-substrate mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -49,7 +54,7 @@ npx aionis-substrate live-sidecar \
 Use `--watch` when a host wants Substrate to poll Runtime Lite repeatedly in one process:
 
 ```bash
-npx aionis-substrate live-sidecar \
+npx aionis-substrate mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \

@@ -38,6 +38,7 @@ All store commands use explicit adapter and path arguments:
 npx aionis-substrate inspect --adapter sqlite --path ./substrate.sqlite --scope repo-a
 npx aionis-substrate preview-context --adapter sqlite --path ./substrate.sqlite --scope repo-a --query "continue runtime work"
 npx aionis-substrate backup --adapter sqlite --path ./substrate.sqlite --output ./substrate-backup.json
+npx aionis-substrate restore-plan --input ./substrate-backup.json --adapter sqlite --path ./restored.sqlite
 npx aionis-substrate restore --adapter sqlite --path ./restored.sqlite --input ./substrate-backup.json
 npx aionis-substrate compact --adapter sqlite --path ./substrate.sqlite
 ```
@@ -98,6 +99,23 @@ npx aionis-substrate restore \
 
 Use `--overwrite` only when replacing an existing restore target is intentional.
 
+### Restore Plan
+
+`restore-plan` verifies a backup and prints what would be restored without
+writing any target:
+
+```bash
+npx aionis-substrate restore-plan \
+  --input ./substrate-backup.json \
+  --adapter sqlite \
+  --path ./restored.sqlite
+```
+
+The report contract is `aionis_substrate_restore_plan_report_v1`. It includes
+backup verification, source metadata, scoped counts, and the optional target
+path. It is intended for migration and incident-review planning before an
+operator chooses to run `restore`.
+
 ### Compact
 
 `compact` rewrites the event history into one checkpoint event without changing governed state:
@@ -125,12 +143,13 @@ The JSON output includes imported/skipped counts plus structured `diagnostics.so
 `diagnostics.skipReasons`, and `diagnostics.jsonIssues` so bridge failures can be classified
 without scraping warning strings.
 
-## Runtime Live Sidecar
+## Runtime Mirror
 
-Use `live-sidecar` to keep a separate Substrate store in sync with Runtime Lite evidence without replaying unchanged rows:
+Use `mirror-runtime` to keep a separate Substrate store in sync with Runtime Lite
+evidence without replaying unchanged rows:
 
 ```bash
-npx aionis-substrate live-sidecar \
+npx aionis-substrate mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -141,11 +160,13 @@ npx aionis-substrate live-sidecar \
 The Runtime source is opened read-only. The target is a Substrate store owned by this command.
 The checkpoint file records stable fingerprints for mapped Runtime nodes, relations, feedback,
 and decisions. Re-running the command applies only new or changed evidence.
+The command does not change Runtime guide behavior, Runtime storage, or Runtime
+learning policy.
 
 Use `--dry-run` to inspect the apply plan without writing the target or checkpoint:
 
 ```bash
-npx aionis-substrate live-sidecar \
+npx aionis-substrate mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -157,7 +178,7 @@ npx aionis-substrate live-sidecar \
 Use `--watch` for a bounded polling loop with a single-instance lock:
 
 ```bash
-npx aionis-substrate live-sidecar \
+npx aionis-substrate mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -174,6 +195,9 @@ Use `--no-lock` only for controlled tests. The watch report contract is
 
 The report contract is `aionis_runtime_live_sidecar_report_v1`. Read `import_summary` as source coverage
 and `apply_summary` as the checkpointed sidecar result.
+
+`live-sidecar` remains accepted as a lower-level command name for existing
+scripts. New integrations should use `mirror-runtime`.
 
 ## Sidecar Check
 
@@ -229,7 +253,7 @@ npm run check:runtime-product-bridge -- \
 The gate starts focused Runtime with isolated Lite SQLite paths, runs real
 `observe -> guide -> feedback -> measure`, writes the same observed evidence
 into an external Substrate store, verifies reopen parity, runs chain probes,
-mirrors Runtime Lite SQLite through read-only `live-sidecar`, verifies
+mirrors Runtime Lite SQLite through read-only Runtime mirror sync, verifies
 checkpoint idempotency, and compares mirrored Substrate `previewContext` buckets
 against Runtime guide surfaces. The top-level report is
 `product-bridge-gate-summary.json`.

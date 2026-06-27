@@ -13,7 +13,7 @@ Aionis Runtime can use this layer as a durable governed memory substrate. Agents
 - Runtime: Node 24+
 - License: Apache-2.0
 - Current adapters: file store and SQLite
-- Runtime integration status: read-only snapshot import, checkpointed live sidecar mirror, reference-corpus parity, external admission parity, and isolated dual-write sidecar experiments
+- Runtime integration status: read-only snapshot import, checkpointed Runtime mirror, reference-corpus parity, external admission parity, and isolated dual-write sidecar experiments
 
 The project is intentionally independent from `AionisRuntime-focused`. It can import real Runtime Lite SQLite snapshots for validation, mirror Runtime evidence into a separate Substrate target through an external checkpointed sidecar, and run isolated sidecar dual-write experiments, but it does not mutate Runtime source code or replace Runtime storage.
 
@@ -41,11 +41,18 @@ Common CLI operations:
 npx aionis-substrate inspect --adapter sqlite --path ./substrate.sqlite --scope repo-a
 npx aionis-substrate preview-context --adapter sqlite --path ./substrate.sqlite --scope repo-a
 npx aionis-substrate backup --adapter sqlite --path ./substrate.sqlite --output ./backup.json
+npx aionis-substrate restore-plan --input ./backup.json --adapter sqlite --path ./restored.sqlite
 npx aionis-substrate restore --adapter sqlite --path ./restored.sqlite --input ./backup.json
 npx aionis-substrate compact --adapter sqlite --path ./substrate.sqlite
-npx aionis-substrate live-sidecar --source ./runtime.sqlite --target ./substrate.sqlite --adapter sqlite --checkpoint ./runtime-live-checkpoint.json --scope repo-a
-npx aionis-substrate live-sidecar --source ./runtime.sqlite --target ./substrate.sqlite --adapter sqlite --checkpoint ./runtime-live-checkpoint.json --scope repo-a --watch --iterations 20 --interval-ms 5000
+npx aionis-substrate mirror-runtime --source ./runtime.sqlite --target ./substrate.sqlite --adapter sqlite --checkpoint ./runtime-mirror-checkpoint.json --scope repo-a
+npx aionis-substrate mirror-runtime --source ./runtime.sqlite --target ./substrate.sqlite --adapter sqlite --checkpoint ./runtime-mirror-checkpoint.json --scope repo-a --watch --iterations 20 --interval-ms 5000
 ```
+
+`mirror-runtime` is the product-facing Runtime sidecar entry point. It opens the
+Runtime SQLite source read-only, writes only the external Substrate target and
+checkpoint, and does not change Runtime guide behavior, Runtime storage, or
+Runtime learning policy. `live-sidecar` remains available as the lower-level
+command name for existing scripts.
 
 ## Two-Minute Live Sidecar Demo
 
@@ -102,6 +109,8 @@ This first version ships two embedded adapters:
 - `buildAionisEmbeddingDocument` and `buildAionisEmbeddingQuery` expose the stable SDK projection for hosts that generate provider vectors before writing nodes or querying Zvec.
 - `importRuntimeLiteSnapshot` can import an existing Runtime Lite SQLite database into an isolated Substrate store through a read-only source connection.
 - `runRuntimeLiveSidecarOnce`, `runRuntimeLiveSidecarWatch`, and `aionis-substrate live-sidecar` incrementally mirror Runtime Lite evidence into a separate Substrate target through a checkpoint file.
+- `aionis-substrate mirror-runtime` exposes the same checkpointed read-only Runtime evidence mirror as the formal product entry point.
+- `aionis-substrate restore-plan` verifies backups and prints a read-only restore/migration plan without writing a target.
 
 This is intentionally small. It proves the substrate contract without changing the existing Aionis Runtime.
 
@@ -125,7 +134,7 @@ Runtime snapshot import is documented in [docs/RUNTIME_SNAPSHOT_IMPORT.md](docs/
 
 The product contract is documented in [docs/PRODUCT_CONTRACT.md](docs/PRODUCT_CONTRACT.md).
 
-Runtime live sidecar sync is documented in [docs/RUNTIME_LIVE_SIDECAR.md](docs/RUNTIME_LIVE_SIDECAR.md).
+Runtime mirror sync is documented in [docs/RUNTIME_LIVE_SIDECAR.md](docs/RUNTIME_LIVE_SIDECAR.md).
 
 Runtime integration design is documented in [docs/RUNTIME_INTEGRATION_DESIGN.md](docs/RUNTIME_INTEGRATION_DESIGN.md).
 
@@ -255,10 +264,10 @@ npm run check:runtime-zvec-index -- \
 
 This imports real Runtime Lite SQLite scopes into isolated Substrate SQLite stores, rebuilds a Zvec candidate index, verifies missing/orphan/stale health, and checks that wide candidate search preserves canonical Substrate search while narrow candidate search recovers seeded real Runtime memory nodes.
 
-Runtime live sidecar mirror:
+Runtime mirror:
 
 ```bash
-npx aionis-substrate live-sidecar \
+npx aionis-substrate mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target /tmp/aionis-substrate.sqlite \
   --adapter sqlite \
@@ -317,7 +326,7 @@ npm run check:runtime-dual-write -- \
   --concurrency 4
 ```
 
-This starts focused Runtime with isolated Lite SQLite paths, calls real `observe -> guide -> feedback -> measure`, writes the same observed memory ids and outcomes into a separate Substrate SQLite store, compares guide buckets, closes and reopens Substrate, and compares again. It can add deterministic generated scenarios with `--generated-count`, run independent scopes concurrently with `--concurrency`, and record sidecar write-integrity plus lifecycle/relation chain probes. It does not mutate focused Runtime source code or replace Runtime storage.
+This starts focused Runtime with isolated Lite SQLite paths, calls real `observe -> guide -> feedback -> measure`, writes the same observed memory ids and outcomes into a separate Substrate SQLite store, compares guide buckets, closes and reopens Substrate, and compares again. It can add deterministic generated scenarios with `--generated-count`, run independent scopes concurrently with `--concurrency`, and record mirror write-integrity plus lifecycle/relation chain probes. It does not mutate focused Runtime source code or replace Runtime storage.
 
 Sustained sidecar soak:
 
@@ -391,7 +400,7 @@ npm run check:published-runtime-bridge-corpus -- --root /path/to/runtime/.tmp --
 
 These commands install `@aionis/substrate@<package.json version>` from the npm registry into a fresh temporary project. `check:published-runtime-smoke` also creates a Runtime Lite SQLite fixture and verifies published-package snapshot import into a separate Substrate store.
 
-`check:published-runtime-bridge` is the real Runtime bridge gate. It reads the Runtime Lite SQLite source passed through `AIONIS_RUNTIME_SQLITE_SOURCE`, imports it into an isolated snapshot store, runs checkpointed `live-sidecar` into an isolated live store, verifies every pass after the first does not mutate the target, verifies snapshot/live event parity, and verifies the Runtime source file was not modified. Use `-- --live-passes N` for a short published-package idempotency soak against a real Runtime source.
+`check:published-runtime-bridge` is the real Runtime bridge gate. It reads the Runtime Lite SQLite source passed through `AIONIS_RUNTIME_SQLITE_SOURCE`, imports it into an isolated snapshot store, runs checkpointed Runtime mirror sync into an isolated live store, verifies every pass after the first does not mutate the target, verifies snapshot/live event parity, and verifies the Runtime source file was not modified. Use `-- --live-passes N` for a short published-package idempotency soak against a real Runtime source.
 
 `check:published-runtime-bridge-corpus` installs the published package once, scans a directory of real Runtime Lite SQLite sources, and runs the same isolated bridge gate across multiple sources. It is the stronger post-publish check when you want to verify that Runtime bridge behavior is not tied to one SQLite file.
 

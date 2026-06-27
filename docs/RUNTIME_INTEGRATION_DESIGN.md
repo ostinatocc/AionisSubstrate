@@ -12,7 +12,7 @@ The first production integration is external and one-way:
 
 ```mermaid
 flowchart LR
-  runtime["Aionis Runtime Lite SQLite\nsource of execution memory"] -->|"read-only"| sidecar["Substrate live-sidecar\ncheckpointed mirror"]
+  runtime["Aionis Runtime Lite SQLite\nsource of execution memory"] -->|"read-only"| sidecar["Substrate mirror-runtime\ncheckpointed mirror"]
   sidecar --> target["Aionis Substrate store\nSQLite or file adapter"]
   target --> audit["audit / backup / migration"]
   target --> preview["previewContext\nread-only governed buckets"]
@@ -56,12 +56,12 @@ Contract:
 - The command is allowed to create nodes, relations, feedback, and decision receipts in the target.
 - The command is not allowed to mutate Runtime tables or Runtime source files.
 
-### 2. Checkpointed Live Sidecar
+### 2. Checkpointed Runtime Mirror
 
 Use this when a host wants Substrate to keep a mirror of Runtime Lite evidence across repeated runs.
 
 ```bash
-npx aionis-substrate live-sidecar \
+npx aionis-substrate mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -83,7 +83,7 @@ Contract:
 Use this when the host wants repeated polling in one supervised process.
 
 ```bash
-npx aionis-substrate live-sidecar \
+npx aionis-substrate mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -129,7 +129,7 @@ Dual-write can be tested only as an isolated experiment:
 A native adapter can be considered only after:
 
 - snapshot import parity is stable;
-- live-sidecar parity is stable;
+- Runtime mirror parity is stable;
 - crash recovery and checkpoint idempotency are stable;
 - product bridge gates show no Runtime behavior regression;
 - the adapter can be disabled without changing Runtime guide behavior.
@@ -141,10 +141,10 @@ An integration change is acceptable only when these checks pass.
 | Gate | Command | Meaning |
 | --- | --- | --- |
 | Local type and adapter checks | `npm run typecheck && npm test` | Store contracts and adapter parity hold. |
-| Live-sidecar recovery | `npm run check:runtime-live-sidecar-recovery` | Checkpoint failure modes do not corrupt target state. |
-| Live-sidecar soak | `npm run check:runtime-live-sidecar-soak` | Repeated evidence append and checkpoint skip behavior hold. |
+| Runtime mirror recovery | `npm run check:runtime-live-sidecar-recovery` | Checkpoint failure modes do not corrupt target state. |
+| Runtime mirror soak | `npm run check:runtime-live-sidecar-soak` | Repeated evidence append and checkpoint skip behavior hold. |
 | Published install smoke | `npm run check:registry-install && npm run check:published-runtime-smoke` | Registry package installs and imports Runtime fixtures. |
-| Real Runtime bridge | `npm run check:published-runtime-bridge-corpus -- --root /path/to/runtime/.tmp --max-files N --live-passes M` | Published package bridges multiple real Runtime SQLite sources without source mutation or duplicate live-sidecar events. |
+| Real Runtime bridge | `npm run check:published-runtime-bridge-corpus -- --root /path/to/runtime/.tmp --max-files N --live-passes M` | Published package bridges multiple real Runtime SQLite sources without source mutation or duplicate mirror events. |
 
 The current `0.1.7` post-release bridge evidence is recorded in [POST_RELEASE_EVIDENCE.md](POST_RELEASE_EVIDENCE.md).
 
@@ -161,7 +161,7 @@ The current `0.1.7` post-release bridge evidence is recorded in [POST_RELEASE_EV
 - 5807 nodes imported;
 - 33 relations imported;
 - 5840 Substrate events written;
-- 10 live-sidecar passes per source;
+- 10 mirror passes per source;
 - every pass after the first stayed idempotent for unchanged evidence.
 
 This proves the published package can mirror real Runtime evidence into isolated Substrate stores. It does not claim downstream Agent task success and does not replace Runtime guide policy.
@@ -182,7 +182,7 @@ The Runtime integration must not introduce:
 The next safe product step is an external Runtime integration package or host recipe:
 
 1. install `@aionis/substrate`;
-2. point `live-sidecar` at Runtime Lite SQLite;
+2. point `mirror-runtime` at Runtime Lite SQLite;
 3. store the Substrate target beside Runtime data;
 4. expose audit, backup, and preview surfaces to product UI;
 5. keep Runtime guide behavior unchanged;
