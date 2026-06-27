@@ -187,6 +187,105 @@ test("Runtime live sidecar ignores a stale checkpoint when the target store is e
   });
 });
 
+test("Runtime live sidecar rejects corrupt checkpoint without mutating target", async () => {
+  await withTempDir(async (dir) => {
+    const source = join(dir, "runtime.sqlite");
+    const target = join(dir, "substrate.sqlite");
+    const checkpoint = join(dir, "checkpoint.json");
+    createRuntimeLiteSource(source);
+    insertRuntimeNode(source, "runtime-current", "Use src/runtime.ts after verifier passed.", "2026-06-01T00:00:00.000Z");
+
+    const store = await openSqliteAionisSubstrate({ path: target });
+    try {
+      await runRuntimeLiveSidecarOnce({ sourcePath: source, target: store, checkpointPath: checkpoint, scope: "repo-a" });
+      const before = await store.getStoreInfo();
+      insertRuntimeNode(source, "runtime-new-after-corrupt-checkpoint", "This must not be mirrored while checkpoint is corrupt.", "2026-06-02T00:00:00.000Z");
+      await writeFile(checkpoint, "{ corrupt checkpoint\n", "utf8");
+
+      await assert.rejects(
+        runRuntimeLiveSidecarOnce({ sourcePath: source, target: store, checkpointPath: checkpoint, scope: "repo-a" }),
+        /failed to parse Runtime live sidecar checkpoint/,
+      );
+      assert.deepEqual(await store.getStoreInfo(), before);
+      assert.deepEqual((await store.listNodes("repo-a")).map((node) => node.id), ["runtime-current"]);
+    } finally {
+      await store.close();
+    }
+  });
+});
+
+test("Runtime live sidecar rejects malformed checkpoint fingerprints without mutating target", async () => {
+  await withTempDir(async (dir) => {
+    const source = join(dir, "runtime.sqlite");
+    const target = join(dir, "substrate.sqlite");
+    const checkpoint = join(dir, "checkpoint.json");
+    createRuntimeLiteSource(source);
+    insertRuntimeNode(source, "runtime-current", "Use src/runtime.ts after verifier passed.", "2026-06-01T00:00:00.000Z");
+
+    const store = await openSqliteAionisSubstrate({ path: target });
+    try {
+      await writeFile(checkpoint, `${JSON.stringify({
+        contract_version: "aionis_runtime_live_sidecar_checkpoint_v1",
+        source_path: source,
+        scope: "repo-a",
+        updated_at: "2026-06-01T00:00:00.000Z",
+        last_run_id: null,
+        fingerprints: {
+          nodes: { "repo-a\u0000runtime-current": 123 },
+          relations: {},
+          feedback: {},
+          decisions: {},
+        },
+      }, null, 2)}\n`, "utf8");
+
+      await assert.rejects(
+        runRuntimeLiveSidecarOnce({ sourcePath: source, target: store, checkpointPath: checkpoint, scope: "repo-a" }),
+        /fingerprints\.nodes\.repo-a.*runtime-current must be a string fingerprint/,
+      );
+      assert.equal((await store.getStoreInfo()).eventCount, 0);
+      assert.deepEqual(await store.listNodes("repo-a"), []);
+    } finally {
+      await store.close();
+    }
+  });
+});
+
+test("Runtime live sidecar rejects checkpoint source or scope mismatch without mutating target", async () => {
+  await withTempDir(async (dir) => {
+    const source = join(dir, "runtime.sqlite");
+    const target = join(dir, "substrate.sqlite");
+    const checkpoint = join(dir, "checkpoint.json");
+    createRuntimeLiteSource(source);
+    insertRuntimeNode(source, "runtime-current", "Use src/runtime.ts after verifier passed.", "2026-06-01T00:00:00.000Z");
+
+    const store = await openSqliteAionisSubstrate({ path: target });
+    try {
+      await writeFile(checkpoint, `${JSON.stringify({
+        contract_version: "aionis_runtime_live_sidecar_checkpoint_v1",
+        source_path: join(dir, "different-runtime.sqlite"),
+        scope: "repo-a",
+        updated_at: "2026-06-01T00:00:00.000Z",
+        last_run_id: null,
+        fingerprints: {
+          nodes: {},
+          relations: {},
+          feedback: {},
+          decisions: {},
+        },
+      }, null, 2)}\n`, "utf8");
+
+      await assert.rejects(
+        runRuntimeLiveSidecarOnce({ sourcePath: source, target: store, checkpointPath: checkpoint, scope: "repo-a" }),
+        /checkpoint source_path\/scope does not match/,
+      );
+      assert.equal((await store.getStoreInfo()).eventCount, 0);
+      assert.deepEqual(await store.listNodes("repo-a"), []);
+    } finally {
+      await store.close();
+    }
+  });
+});
+
 test("Runtime live sidecar watch runs a bounded interval loop under a lock", async () => {
   await withTempDir(async (dir) => {
     const source = join(dir, "runtime.sqlite");
@@ -216,6 +315,38 @@ test("Runtime live sidecar watch runs a bounded interval loop under a lock", asy
       assert.equal(report.apply_summary.nodes.attempted, 2);
       assert.equal(report.apply_summary.nodes.applied, 1);
       assert.equal(report.apply_summary.nodes.unchanged, 1);
+      await assert.rejects(readFile(lock, "utf8"), { code: "ENOENT" });
+    } finally {
+      await store.close();
+    }
+  });
+});
+
+test("Runtime live sidecar watch releases lock when checkpoint recovery fails closed", async () => {
+  await withTempDir(async (dir) => {
+    const source = join(dir, "runtime.sqlite");
+    const target = join(dir, "substrate.sqlite");
+    const checkpoint = join(dir, "checkpoint.json");
+    const lock = join(dir, "sidecar.lock");
+    createRuntimeLiteSource(source);
+    insertRuntimeNode(source, "runtime-current", "Use src/runtime.ts after verifier passed.", "2026-06-01T00:00:00.000Z");
+    await writeFile(checkpoint, "{ corrupt checkpoint\n", "utf8");
+
+    const store = await openSqliteAionisSubstrate({ path: target });
+    try {
+      await assert.rejects(
+        runRuntimeLiveSidecarWatch({
+          sourcePath: source,
+          target: store,
+          checkpointPath: checkpoint,
+          scope: "repo-a",
+          intervalMs: 1,
+          iterations: 1,
+          lockPath: lock,
+        }),
+        /failed to parse Runtime live sidecar checkpoint/,
+      );
+      assert.equal((await store.getStoreInfo()).eventCount, 0);
       await assert.rejects(readFile(lock, "utf8"), { code: "ENOENT" });
     } finally {
       await store.close();

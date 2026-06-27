@@ -208,14 +208,56 @@ function checkpointKey(kind: RuntimeLiveFingerprintKind, input: AionisMemoryNode
   return scopedKey(decision.scope, decision.id);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function readStringRecord(value: unknown, label: string): Record<string, string> {
+  if (!isRecord(value)) throw new Error(`${label} must be an object`);
+  const out: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item !== "string") throw new Error(`${label}.${key} must be a string fingerprint`);
+    out[key] = item;
+  }
+  return out;
+}
+
+function parseCheckpoint(raw: string, path: string): RuntimeLiveSidecarCheckpoint {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`failed to parse Runtime live sidecar checkpoint ${path}: ${(err as Error).message}`);
+  }
+  if (!isRecord(parsed)) throw new Error(`Runtime live sidecar checkpoint ${path} must be a JSON object`);
+  if (parsed.contract_version !== "aionis_runtime_live_sidecar_checkpoint_v1") {
+    throw new Error(`unsupported checkpoint contract: ${String(parsed.contract_version)}`);
+  }
+  if (typeof parsed.source_path !== "string") throw new Error(`Runtime live sidecar checkpoint ${path} source_path must be a string`);
+  if (parsed.scope !== null && typeof parsed.scope !== "string") throw new Error(`Runtime live sidecar checkpoint ${path} scope must be a string or null`);
+  if (typeof parsed.updated_at !== "string") throw new Error(`Runtime live sidecar checkpoint ${path} updated_at must be a string`);
+  if (parsed.last_run_id !== null && typeof parsed.last_run_id !== "string") throw new Error(`Runtime live sidecar checkpoint ${path} last_run_id must be a string or null`);
+  if (!isRecord(parsed.fingerprints)) throw new Error(`Runtime live sidecar checkpoint ${path} fingerprints must be an object`);
+  return {
+    contract_version: "aionis_runtime_live_sidecar_checkpoint_v1",
+    source_path: parsed.source_path,
+    scope: parsed.scope,
+    updated_at: parsed.updated_at,
+    last_run_id: parsed.last_run_id,
+    fingerprints: {
+      nodes: readStringRecord(parsed.fingerprints.nodes, `Runtime live sidecar checkpoint ${path} fingerprints.nodes`),
+      relations: readStringRecord(parsed.fingerprints.relations, `Runtime live sidecar checkpoint ${path} fingerprints.relations`),
+      feedback: readStringRecord(parsed.fingerprints.feedback, `Runtime live sidecar checkpoint ${path} fingerprints.feedback`),
+      decisions: readStringRecord(parsed.fingerprints.decisions, `Runtime live sidecar checkpoint ${path} fingerprints.decisions`),
+    },
+  };
+}
+
 async function loadCheckpoint(path: string, sourcePath: string, scope: string | null): Promise<{ present: boolean; checkpoint: RuntimeLiveSidecarCheckpoint }> {
   try {
-    const parsed = JSON.parse(await readFile(path, "utf8")) as RuntimeLiveSidecarCheckpoint;
-    if (parsed.contract_version !== "aionis_runtime_live_sidecar_checkpoint_v1") {
-      throw new Error(`unsupported checkpoint contract: ${(parsed as { contract_version?: unknown }).contract_version}`);
-    }
+    const parsed = parseCheckpoint(await readFile(path, "utf8"), path);
     if (parsed.source_path !== sourcePath || parsed.scope !== scope) {
-      throw new Error("checkpoint source_path/scope does not match the requested Runtime source");
+      throw new Error(`checkpoint source_path/scope does not match the requested Runtime source: ${path}`);
     }
     return { present: true, checkpoint: parsed };
   } catch (err) {

@@ -100,6 +100,24 @@ verifies:
 
 The report contract is `aionis_runtime_live_sidecar_soak_report_v1`.
 
+## Recovery Check
+
+Use the recovery check before embedding the sidecar in a supervised or long-running process:
+
+```bash
+npm run check:runtime-live-sidecar-recovery
+```
+
+The check uses real Runtime Lite and Substrate SQLite stores and injects checkpoint failure modes. It verifies:
+
+- corrupt checkpoint JSON fails before target mutation;
+- malformed fingerprint records fail before target mutation;
+- source/scope mismatch fails before target mutation;
+- watch lock files are released even when checkpoint loading fails;
+- an empty target with a stale-but-valid checkpoint replays the Runtime snapshot instead of silently trusting fingerprints.
+
+The report contract is `aionis_runtime_live_sidecar_recovery_report_v1`.
+
 ## Report
 
 The report contract is `aionis_runtime_live_sidecar_report_v1`.
@@ -124,6 +142,8 @@ The checkpoint is scoped to:
 - mapped Substrate object fingerprints.
 
 If the checkpoint path points to a different Runtime source or scope, the command fails. This prevents accidental cross-source reuse.
+
+If the checkpoint JSON is corrupt or has malformed fingerprint records, the command fails closed before importing Runtime evidence. The target store is not mutated.
 
 If the checkpoint contains fingerprints but the target store is empty, the sidecar ignores the checkpoint and replays the Runtime snapshot into the target. This prevents a stale checkpoint from hiding a lost or newly created target store.
 

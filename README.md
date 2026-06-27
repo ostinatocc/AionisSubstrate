@@ -352,6 +352,7 @@ npm run build
 npm test
 npm run bench:contract
 npm run check:runtime-live-sidecar-soak
+npm run check:runtime-live-sidecar-recovery
 npm run check:pack
 npm run check:install-smoke
 npm run example:basic
@@ -371,6 +372,8 @@ npm run check:release
 `check:install-smoke` packs the built package, installs that tarball into a fresh temporary project, imports `@aionis/substrate`, and runs real file/SQLite store operations from the installed package.
 
 `check:runtime-live-sidecar-soak` creates a real Runtime Lite SQLite fixture, repeatedly appends execution-memory rows, and verifies checkpointed live-sidecar watch sync into a separate real Substrate SQLite store.
+
+`check:runtime-live-sidecar-recovery` injects corrupt checkpoint, malformed fingerprint, source/scope mismatch, and empty-target recovery scenarios, verifying the sidecar fails closed without mutating target state and releases locks on failure.
 
 After publishing to npm, run the registry package checks:
 
