@@ -13,6 +13,7 @@ type Args = {
   sourcePath: string;
   scope?: string;
   limit: number;
+  livePasses: number;
   packageSpec: string;
   keepTemp: boolean;
 };
@@ -50,6 +51,15 @@ type InspectReport = {
   };
 };
 
+type LivePassSummary = {
+  pass: number;
+  reported_imported_events: number;
+  changed_events: number;
+  changed_sequence: number;
+  event_count: number;
+  last_sequence: number;
+};
+
 function registryPackageSpec(): string {
   const override = process.env.AIONIS_SUBSTRATE_REGISTRY_PACKAGE?.trim();
   if (override) return override;
@@ -60,14 +70,15 @@ function registryPackageSpec(): string {
 function usage(): never {
   throw new Error([
     "Usage:",
-    "  node scripts/published-runtime-bridge.ts --source /path/runtime.sqlite [--scope <scope>] [--limit 1000] [--package @aionis/substrate@0.1.5] [--keep-temp]",
+    "  node scripts/published-runtime-bridge.ts --source /path/runtime.sqlite [--scope <scope>] [--limit 1000] [--live-passes 2] [--package @aionis/substrate@0.1.5] [--keep-temp]",
     "",
     "Environment:",
     "  AIONIS_RUNTIME_SQLITE_SOURCE=/path/runtime.sqlite",
+    "  AIONIS_RUNTIME_BRIDGE_LIVE_PASSES=2",
     "  AIONIS_SUBSTRATE_REGISTRY_PACKAGE=@aionis/substrate@0.1.5",
     "",
     "This installs the published npm package into a fresh temp project, imports a real Runtime Lite SQLite source into a separate Substrate store,",
-    "runs checkpointed live-sidecar twice, and verifies source immutability plus snapshot/live parity.",
+    "runs checkpointed live-sidecar multiple times, and verifies source immutability plus snapshot/live parity.",
   ].join("\n"));
 }
 
@@ -76,6 +87,7 @@ function parseArgs(): Args {
   let sourcePath = process.env.AIONIS_RUNTIME_SQLITE_SOURCE?.trim() ?? "";
   let scope: string | undefined;
   let limit = Number(process.env.AIONIS_RUNTIME_BRIDGE_LIMIT ?? "1000");
+  let livePasses = Number(process.env.AIONIS_RUNTIME_BRIDGE_LIVE_PASSES ?? "2");
   let packageSpec = registryPackageSpec();
   let keepTemp = false;
 
@@ -87,6 +99,8 @@ function parseArgs(): Args {
       scope = args[++index] ?? "";
     } else if (arg === "--limit") {
       limit = Number(args[++index] ?? "");
+    } else if (arg === "--live-passes") {
+      livePasses = Number(args[++index] ?? "");
     } else if (arg === "--package") {
       packageSpec = args[++index] ?? "";
     } else if (arg === "--keep-temp") {
@@ -100,12 +114,14 @@ function parseArgs(): Args {
 
   if (!sourcePath) usage();
   if (!Number.isInteger(limit) || limit <= 0) throw new Error(`invalid --limit: ${limit}`);
+  if (!Number.isInteger(livePasses) || livePasses < 2) throw new Error(`invalid --live-passes: ${livePasses}; expected an integer >= 2`);
   if (!packageSpec) throw new Error("empty package spec");
 
   return {
     sourcePath: resolve(sourcePath),
     scope: scope || undefined,
     limit,
+    livePasses,
     packageSpec,
     keepTemp,
   };
@@ -180,59 +196,59 @@ async function main(): Promise<void> {
       ...scopeArgs,
     ]), "inspect snapshot");
 
-    const liveFirst = parseJson<RuntimeLiveSidecarReport>(runCli(workspace, [
-      "live-sidecar",
-      "--source", args.sourcePath,
-      "--target", livePath,
-      "--adapter", "sqlite",
-      "--checkpoint", checkpointPath,
-      ...scopeArgs,
-      ...limitArgs,
-    ]), "live-sidecar first");
-
-    const inspectLiveAfterFirst = parseJson<InspectReport>(runCli(workspace, [
-      "inspect",
-      "--adapter", "sqlite",
-      "--path", livePath,
-      ...scopeArgs,
-    ]), "inspect live after first pass");
-
-    const liveSecond = parseJson<RuntimeLiveSidecarReport>(runCli(workspace, [
-      "live-sidecar",
-      "--source", args.sourcePath,
-      "--target", livePath,
-      "--adapter", "sqlite",
-      "--checkpoint", checkpointPath,
-      ...scopeArgs,
-      ...limitArgs,
-    ]), "live-sidecar second");
-
-    const inspectLive = parseJson<InspectReport>(runCli(workspace, [
-      "inspect",
-      "--adapter", "sqlite",
-      "--path", livePath,
-      ...scopeArgs,
-    ]), "inspect live");
+    const livePasses: LivePassSummary[] = [];
+    let previousInspect: InspectReport | null = null;
+    let inspectLive: InspectReport | null = null;
+    for (let pass = 1; pass <= args.livePasses; pass += 1) {
+      const liveReport = parseJson<RuntimeLiveSidecarReport>(runCli(workspace, [
+        "live-sidecar",
+        "--source", args.sourcePath,
+        "--target", livePath,
+        "--adapter", "sqlite",
+        "--checkpoint", checkpointPath,
+        ...scopeArgs,
+        ...limitArgs,
+      ]), `live-sidecar pass ${pass}`);
+      const currentInspect = parseJson<InspectReport>(runCli(workspace, [
+        "inspect",
+        "--adapter", "sqlite",
+        "--path", livePath,
+        ...scopeArgs,
+      ]), `inspect live after pass ${pass}`);
+      const reportedEvents = importedEvents(importSummaryFromLive(liveReport));
+      const changedEvents = previousInspect
+        ? currentInspect.info.eventCount - previousInspect.info.eventCount
+        : currentInspect.info.eventCount;
+      const changedSequence = previousInspect
+        ? currentInspect.info.lastSequence - previousInspect.info.lastSequence
+        : currentInspect.info.lastSequence;
+      if (pass > 1 && (changedEvents !== 0 || changedSequence !== 0)) {
+        throw new Error([
+          `live-sidecar pass ${pass} was not idempotent`,
+          `event delta: ${changedEvents}`,
+          `sequence delta: ${changedSequence}`,
+        ].join("; "));
+      }
+      livePasses.push({
+        pass,
+        reported_imported_events: reportedEvents,
+        changed_events: changedEvents,
+        changed_sequence: changedSequence,
+        event_count: currentInspect.info.eventCount,
+        last_sequence: currentInspect.info.lastSequence,
+      });
+      previousInspect = currentInspect;
+      inspectLive = currentInspect;
+    }
+    if (!inspectLive) throw new Error("live-sidecar did not run");
 
     await assertSourceUnchanged(args.sourcePath, beforeSourceStat);
 
-    const liveFirstSummary = importSummaryFromLive(liveFirst);
-    const liveSecondSummary = importSummaryFromLive(liveSecond);
-    const firstEvents = importedEvents(liveFirstSummary);
-    const secondEvents = importedEvents(liveSecondSummary);
-    const secondChangedEvents = inspectLive.info.eventCount - inspectLiveAfterFirst.info.eventCount;
-    const secondChangedSequence = inspectLive.info.lastSequence - inspectLiveAfterFirst.info.lastSequence;
+    const firstEvents = livePasses[0]?.reported_imported_events ?? 0;
 
     if ((importReport.nodesImported ?? 0) <= 0) throw new Error("snapshot import imported zero Runtime nodes");
     if (importedEvents(importReport) <= 0) throw new Error("snapshot import applied zero Substrate events");
     if (firstEvents <= 0) throw new Error("first live-sidecar pass applied zero Substrate events");
-    if (secondChangedEvents !== 0 || secondChangedSequence !== 0) {
-      throw new Error([
-        "second live-sidecar pass was not idempotent",
-        `event delta: ${secondChangedEvents}`,
-        `sequence delta: ${secondChangedSequence}`,
-      ].join("; "));
-    }
     if (inspectSnapshot.info.eventCount !== inspectLive.info.eventCount) {
       throw new Error(`snapshot/live event count mismatch: ${inspectSnapshot.info.eventCount} vs ${inspectLive.info.eventCount}`);
     }
@@ -246,6 +262,7 @@ async function main(): Promise<void> {
       source: args.sourcePath,
       scope: args.scope ?? null,
       limit: args.limit,
+      live_passes: args.livePasses,
       temp_dir: args.keepTemp ? workspace : null,
       snapshot: {
         nodes_read: importReport.nodesRead ?? 0,
@@ -260,10 +277,7 @@ async function main(): Promise<void> {
         event_count: inspectSnapshot.info.eventCount,
       },
       live_sidecar: {
-        first_reported_imported_events: firstEvents,
-        second_reported_imported_events: secondEvents,
-        second_changed_events: secondChangedEvents,
-        second_changed_sequence: secondChangedSequence,
+        passes: livePasses,
         event_count: inspectLive.info.eventCount,
       },
       source_immutable: true,
