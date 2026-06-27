@@ -87,6 +87,32 @@ It contains:
 
 ## Soak Check
 
+Use the local evidence chain check when you need the full local product path,
+not only mirror idempotency:
+
+```bash
+npm run check:runtime-local-evidence-chain
+```
+
+The check creates a Runtime Lite fixture unless `--source` is supplied, mirrors
+it into an isolated Substrate SQLite target, verifies a second mirror pass is
+idempotent, exports a checksum-covered backup, builds a read-only restore plan,
+restores into a separate SQLite target, and confirms the restored context buckets
+match the mirrored context buckets.
+
+For a real local Runtime SQLite source:
+
+```bash
+npm run check:runtime-local-evidence-chain -- \
+  --source /path/to/aionis-runtime-lite.sqlite \
+  --scope your-project
+```
+
+The report contract is
+`aionis_substrate_runtime_local_evidence_chain_report_v1`.
+
+## Mirror Soak Check
+
 Use the soak check before release or before embedding the sidecar in a long-running host:
 
 ```bash

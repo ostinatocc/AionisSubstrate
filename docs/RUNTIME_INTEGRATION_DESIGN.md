@@ -141,6 +141,7 @@ An integration change is acceptable only when these checks pass.
 | Gate | Command | Meaning |
 | --- | --- | --- |
 | Local type and adapter checks | `npm run typecheck && npm test` | Store contracts and adapter parity hold. |
+| Local evidence chain | `npm run check:runtime-local-evidence-chain` | Runtime mirror, checkpoint idempotency, backup verification, restore-plan, and restored context equivalence hold as one local chain. |
 | Runtime mirror recovery | `npm run check:runtime-live-sidecar-recovery` | Checkpoint failure modes do not corrupt target state. |
 | Runtime mirror soak | `npm run check:runtime-live-sidecar-soak` | Repeated evidence append and checkpoint skip behavior hold. |
 | Published install smoke | `npm run check:registry-install && npm run check:published-runtime-smoke` | Registry package installs and imports Runtime fixtures. |
@@ -149,6 +150,30 @@ An integration change is acceptable only when these checks pass.
 The current published-package bridge evidence is recorded in [POST_RELEASE_EVIDENCE.md](POST_RELEASE_EVIDENCE.md).
 
 ## Current Evidence
+
+Local evidence chain validation now covers the full local product path:
+
+```bash
+npm run check:runtime-local-evidence-chain
+```
+
+The gate verifies:
+
+- Runtime SQLite is opened read-only;
+- `mirror-runtime` writes only the isolated Substrate target and checkpoint;
+- a second mirror pass is idempotent;
+- backup verification succeeds;
+- restore-plan remains read-only and restorable;
+- restored Substrate context buckets match the mirrored context buckets.
+
+It has also been run against a real focused Runtime Lite SQLite source under
+`/Volumes/ziel/AionisRuntime-focused/.tmp/aionis-lite-write.sqlite` with:
+
+- source unchanged;
+- mirror idempotent;
+- backup verified;
+- restore-plan accepted;
+- restored context equivalent to mirrored context.
 
 `@aionis/substrate@0.1.7` passed a published-package Runtime bridge corpus soak against real focused Runtime SQLite files:
 
