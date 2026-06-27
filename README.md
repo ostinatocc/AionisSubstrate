@@ -9,7 +9,7 @@ Aionis Runtime can use this layer as a durable governed memory substrate. Agents
 ## Status
 
 - Package: `@aionis/substrate`
-- Version: `0.1.6`
+- Version: `0.1.7`
 - Runtime: Node 24+
 - License: Apache-2.0
 - Current adapters: file store and SQLite
@@ -126,6 +126,8 @@ Runtime snapshot import is documented in [docs/RUNTIME_SNAPSHOT_IMPORT.md](docs/
 The product contract is documented in [docs/PRODUCT_CONTRACT.md](docs/PRODUCT_CONTRACT.md).
 
 Runtime live sidecar sync is documented in [docs/RUNTIME_LIVE_SIDECAR.md](docs/RUNTIME_LIVE_SIDECAR.md).
+
+Runtime integration design is documented in [docs/RUNTIME_INTEGRATION_DESIGN.md](docs/RUNTIME_INTEGRATION_DESIGN.md).
 
 Published Runtime bridge validation is documented in the release checks section below. It installs the published npm package into a fresh temporary project, reads a real Runtime Lite SQLite source, writes only separate Substrate target stores, and verifies snapshot/live parity plus checkpoint idempotency.
 
