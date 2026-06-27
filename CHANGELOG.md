@@ -15,6 +15,11 @@ All notable changes to Aionis Substrate are documented here.
 - Candidate-index semantic fusion that lets Zvec/provider candidates influence final `searchNodes()` ranking without bypassing scope, lifecycle, authority, confidence, or target-file filters.
 - DashScope native `text-embedding-v4` provider eval with query/document projection, optional query instructions, and projection-aware reports.
 - Stable SDK embedding projection helpers for provider hosts: `buildAionisEmbeddingDocument`, `buildAionisEmbeddingQuery`, and `AIONIS_EMBEDDING_PROJECTION_VERSION`.
+- Runtime live sidecar recovery check now covers checkpoint loss after target writes and changed Runtime evidence after checkpoint loss.
+
+### Changed
+
+- Runtime live sidecar repairs missing or stale checkpoints from matching target evidence without appending duplicate events, while still applying changed Runtime evidence.
 
 ## 0.1.4 - 2026-06-26
 

@@ -9,7 +9,7 @@ Aionis Runtime can use this layer as a durable governed memory substrate. Agents
 ## Status
 
 - Package: `@aionis/substrate`
-- Version: `0.1.4`
+- Version: `0.1.6`
 - Runtime: Node 24+
 - License: Apache-2.0
 - Current adapters: file store and SQLite
@@ -373,7 +373,7 @@ npm run check:release
 
 `check:runtime-live-sidecar-soak` creates a real Runtime Lite SQLite fixture, repeatedly appends execution-memory rows, and verifies checkpointed live-sidecar watch sync into a separate real Substrate SQLite store.
 
-`check:runtime-live-sidecar-recovery` injects corrupt checkpoint, malformed fingerprint, source/scope mismatch, and empty-target recovery scenarios, verifying the sidecar fails closed without mutating target state and releases locks on failure.
+`check:runtime-live-sidecar-recovery` injects missing checkpoint, changed evidence after missing checkpoint, corrupt checkpoint, malformed fingerprint, source/scope mismatch, and empty-target recovery scenarios. It verifies the sidecar repairs recoverable checkpoint loss without duplicate events, still applies real source changes, fails closed for unsafe checkpoint state, and releases locks on failure.
 
 After publishing to npm, run the registry package checks:
 

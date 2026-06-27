@@ -183,6 +183,17 @@ function fingerprint(value: unknown): string {
   return createHash("sha256").update(stableJson(value)).digest("hex");
 }
 
+function clampConfidence(value: number): number {
+  if (!Number.isFinite(value)) throw new Error("confidence must be finite");
+  if (value < 0) return 0;
+  if (value > 1) return 1;
+  return value;
+}
+
+function normalizeStrings(values: string[] | undefined): string[] {
+  return Array.from(new Set((values ?? []).map((value) => value.trim()).filter(Boolean)));
+}
+
 function scopedKey(scope: string, id: string): string {
   return `${scope}\u0000${id}`;
 }
@@ -367,6 +378,67 @@ function makeUnchangedDecision(input: AionisDecisionTraceInput): AionisDecisionT
   };
 }
 
+function nodeMatchesInput(existing: AionisMemoryNode, input: AionisMemoryNodeInput): boolean {
+  const materialized: AionisMemoryNode = {
+    id: input.id as string,
+    scope: input.scope,
+    kind: input.kind,
+    title: input.title ?? existing.title ?? null,
+    summary: input.summary,
+    lifecycle: input.lifecycle ?? existing.lifecycle ?? "candidate",
+    authority: input.authority ?? existing.authority ?? "unknown",
+    confidence: clampConfidence(input.confidence ?? existing.confidence ?? 0.5),
+    targetFiles: normalizeStrings(input.targetFiles ?? existing.targetFiles),
+    payloadRef: input.payloadRef ?? existing.payloadRef ?? null,
+    agentId: input.agentId ?? existing.agentId ?? null,
+    teamId: input.teamId ?? existing.teamId ?? null,
+    metadata: input.metadata ?? existing.metadata ?? {},
+    createdAt: existing.createdAt,
+    updatedAt: input.updatedAt ?? existing.updatedAt,
+  };
+  return stableJson(existing) === stableJson(materialized);
+}
+
+function relationMatchesInput(existing: AionisRelation, input: AionisRelationInput): boolean {
+  const materialized: AionisRelation = {
+    id: input.id as string,
+    scope: input.scope,
+    kind: input.kind,
+    sourceId: input.sourceId,
+    targetId: input.targetId,
+    confidence: clampConfidence(input.confidence ?? 0.7),
+    reasons: normalizeStrings(input.reasons),
+    metadata: input.metadata ?? {},
+    createdAt: input.createdAt ?? existing.createdAt,
+  };
+  return stableJson(existing) === stableJson(materialized);
+}
+
+function feedbackMatchesInput(existing: AionisFeedback, input: AionisFeedbackInput): boolean {
+  const materialized: AionisFeedback = {
+    id: input.id as string,
+    scope: input.scope,
+    memoryId: input.memoryId,
+    outcome: input.outcome,
+    strength: input.strength,
+    runId: input.runId ?? null,
+    evidenceRef: input.evidenceRef ?? null,
+    createdAt: input.createdAt ?? existing.createdAt,
+  };
+  return stableJson(existing) === stableJson(materialized);
+}
+
+function decisionMatchesInput(existing: AionisDecisionTrace, input: AionisDecisionTraceInput): boolean {
+  const materialized: AionisDecisionTrace = {
+    id: input.id as string,
+    scope: input.scope,
+    query: input.query ?? null,
+    decisions: input.decisions,
+    createdAt: input.createdAt ?? existing.createdAt,
+  };
+  return stableJson(existing) === stableJson(materialized);
+}
+
 function decorateTarget(
   target: AionisSubstrate,
   checkpoint: RuntimeLiveSidecarCheckpoint,
@@ -379,11 +451,12 @@ function decorateTarget(
     key: string,
     value: unknown,
     stat: RuntimeLiveSidecarApplyStats,
+    targetAlreadyMatches = false,
     forceApply = false,
   ): Promise<boolean> {
     stat.attempted += 1;
     const hash = fingerprint(value);
-    if (checkpoint.fingerprints[kind][key] === hash && !forceApply) {
+    if ((checkpoint.fingerprints[kind][key] === hash || targetAlreadyMatches) && !forceApply) {
       stat.unchanged += 1;
       nextCheckpoint.fingerprints[kind][key] = hash;
       return false;
@@ -398,29 +471,29 @@ function decorateTarget(
     async putNode(input): Promise<AionisMemoryNode> {
       const key = checkpointKey("nodes", input);
       const existing = await target.getNode(input.scope, input.id as string);
-      const apply = await shouldApply("nodes", key, input, stats.nodes, existing === null);
+      const apply = await shouldApply("nodes", key, input, stats.nodes, existing !== null && nodeMatchesInput(existing, input), existing === null);
       if (!apply) return makeUnchangedNode(input, existing);
       return await target.putNode(input);
     },
     async putRelation(input): Promise<AionisRelation> {
       const key = checkpointKey("relations", input);
-      const existing = (await target.listRelations(input.scope)).some((relation) => relation.id === input.id);
-      const apply = await shouldApply("relations", key, input, stats.relations, !existing);
+      const existing = (await target.listRelations(input.scope)).find((relation) => relation.id === input.id) ?? null;
+      const apply = await shouldApply("relations", key, input, stats.relations, existing !== null && relationMatchesInput(existing, input), existing === null);
       if (!apply) return makeUnchangedRelation(input);
       return await target.putRelation(input);
     },
     async recordFeedback(input): Promise<AionisFeedback> {
       const key = checkpointKey("feedback", input);
       const existing = (await target.listFeedback({ scope: input.scope, memoryId: input.memoryId }))
-        .some((feedback) => feedback.id === input.id);
-      const apply = await shouldApply("feedback", key, input, stats.feedback, !existing);
+        .find((feedback) => feedback.id === input.id) ?? null;
+      const apply = await shouldApply("feedback", key, input, stats.feedback, existing !== null && feedbackMatchesInput(existing, input), existing === null);
       if (!apply) return makeUnchangedFeedback(input);
       return await target.recordFeedback(input);
     },
     async recordDecision(input): Promise<AionisDecisionTrace> {
       const key = checkpointKey("decisions", input);
-      const existing = (await target.listDecisions(input.scope)).some((decision) => decision.id === input.id);
-      const apply = await shouldApply("decisions", key, input, stats.decisions, !existing);
+      const existing = (await target.listDecisions(input.scope)).find((decision) => decision.id === input.id) ?? null;
+      const apply = await shouldApply("decisions", key, input, stats.decisions, existing !== null && decisionMatchesInput(existing, input), existing === null);
       if (!apply) return makeUnchangedDecision(input);
       return await target.recordDecision(input);
     },

@@ -95,6 +95,12 @@ function insertRuntimeNode(path: string, id: string, summary: string, createdAt:
   db.close();
 }
 
+function updateRuntimeNodeSummary(path: string, id: string, summary: string): void {
+  const db = new DatabaseSync(path);
+  db.prepare("UPDATE lite_memory_nodes SET text_summary = ? WHERE id = ?").run(summary, id);
+  db.close();
+}
+
 async function readCheckpoint(path: string): Promise<RuntimeLiveSidecarCheckpoint> {
   return JSON.parse(await readFile(path, "utf8")) as RuntimeLiveSidecarCheckpoint;
 }
@@ -124,6 +130,64 @@ test("Runtime live sidecar writes a snapshot once and skips unchanged evidence o
 
       const persisted = await readCheckpoint(checkpoint);
       assert.equal(Object.keys(persisted.fingerprints.nodes).length, 1);
+    } finally {
+      await store.close();
+    }
+  });
+});
+
+test("Runtime live sidecar repairs a missing checkpoint after target writes without duplicating events", async () => {
+  await withTempDir(async (dir) => {
+    const source = join(dir, "runtime.sqlite");
+    const target = join(dir, "substrate.sqlite");
+    const checkpoint = join(dir, "checkpoint.json");
+    createRuntimeLiteSource(source);
+    insertRuntimeNode(source, "runtime-current", "Use src/runtime.ts after verifier passed.", "2026-06-01T00:00:00.000Z");
+
+    const store = await openSqliteAionisSubstrate({ path: target });
+    try {
+      const first = await runRuntimeLiveSidecarOnce({ sourcePath: source, target: store, checkpointPath: checkpoint, scope: "repo-a" });
+      assert.equal(first.store_after.eventCount, 1);
+      await rm(checkpoint, { force: true });
+
+      const recovered = await runRuntimeLiveSidecarOnce({ sourcePath: source, target: store, checkpointPath: checkpoint, scope: "repo-a" });
+      assert.equal(recovered.checkpoint_before.present, false);
+      assert.equal(recovered.apply_summary.nodes.attempted, 1);
+      assert.equal(recovered.apply_summary.nodes.applied, 0);
+      assert.equal(recovered.apply_summary.nodes.unchanged, 1);
+      assert.equal(recovered.store_after.eventCount, 1);
+      assert.equal(Object.keys((await readCheckpoint(checkpoint)).fingerprints.nodes).length, 1);
+    } finally {
+      await store.close();
+    }
+  });
+});
+
+test("Runtime live sidecar still applies changed Runtime evidence when checkpoint is missing", async () => {
+  await withTempDir(async (dir) => {
+    const source = join(dir, "runtime.sqlite");
+    const target = join(dir, "substrate.sqlite");
+    const checkpoint = join(dir, "checkpoint.json");
+    createRuntimeLiteSource(source);
+    insertRuntimeNode(source, "runtime-current", "Use src/runtime.ts after verifier passed.", "2026-06-01T00:00:00.000Z");
+
+    const store = await openSqliteAionisSubstrate({ path: target });
+    try {
+      await runRuntimeLiveSidecarOnce({ sourcePath: source, target: store, checkpointPath: checkpoint, scope: "repo-a" });
+      await rm(checkpoint, { force: true });
+      updateRuntimeNodeSummary(source, "runtime-current", "Use src/runtime.ts after the updated verifier passed.");
+
+      const report = await runRuntimeLiveSidecarOnce({ sourcePath: source, target: store, checkpointPath: checkpoint, scope: "repo-a" });
+      assert.equal(report.apply_summary.nodes.attempted, 1);
+      assert.equal(report.apply_summary.nodes.applied, 1);
+      assert.equal(report.apply_summary.nodes.unchanged, 0);
+      assert.equal(report.store_after.eventCount, 2);
+      assert.equal((await store.getNode("repo-a", "runtime-current"))?.summary, "Use src/runtime.ts after the updated verifier passed.");
+
+      const second = await runRuntimeLiveSidecarOnce({ sourcePath: source, target: store, checkpointPath: checkpoint, scope: "repo-a" });
+      assert.equal(second.apply_summary.nodes.applied, 0);
+      assert.equal(second.apply_summary.nodes.unchanged, 1);
+      assert.equal(second.store_after.eventCount, 2);
     } finally {
       await store.close();
     }

@@ -110,6 +110,8 @@ npm run check:runtime-live-sidecar-recovery
 
 The check uses real Runtime Lite and Substrate SQLite stores and injects checkpoint failure modes. It verifies:
 
+- a missing checkpoint is repaired from already mirrored target evidence without duplicating events;
+- a missing checkpoint does not hide changed Runtime evidence;
 - corrupt checkpoint JSON fails before target mutation;
 - malformed fingerprint records fail before target mutation;
 - source/scope mismatch fails before target mutation;
@@ -148,6 +150,8 @@ If the checkpoint JSON is corrupt or has malformed fingerprint records, the comm
 If the checkpoint contains fingerprints but the target store is empty, the sidecar ignores the checkpoint and replays the Runtime snapshot into the target. This prevents a stale checkpoint from hiding a lost or newly created target store.
 
 If an individual node, relation, feedback row, or decision is missing from the target even though the checkpoint says it is unchanged, the sidecar re-applies that object.
+
+If the target already contains an object that exactly matches the mapped Runtime evidence but the checkpoint is missing or stale, the sidecar treats the object as unchanged and repairs the checkpoint fingerprint without appending a duplicate event. If the mapped Runtime evidence differs from the target object, the sidecar still applies the changed object and updates the checkpoint.
 
 ## Product Boundary
 

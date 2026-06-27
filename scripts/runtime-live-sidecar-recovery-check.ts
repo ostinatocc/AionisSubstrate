@@ -151,6 +151,15 @@ function insertRuntimeNode(path: string, id: string, summary: string, createdAt:
   }
 }
 
+function updateRuntimeNodeSummary(path: string, id: string, summary: string): void {
+  const db = new DatabaseSync(path);
+  try {
+    db.prepare("UPDATE lite_memory_nodes SET text_summary = ? WHERE id = ?").run(summary, id);
+  } finally {
+    db.close();
+  }
+}
+
 function countSourceNodes(path: string): number {
   const db = new DatabaseSync(path, { readOnly: true });
   try {
@@ -186,7 +195,40 @@ async function runCheck(args: Args): Promise<RecoveryReport> {
     const store = await openSqliteAionisSubstrate({ path: targetPath });
     try {
       await runRuntimeLiveSidecarOnce({ sourcePath, target: store, checkpointPath, scope: "repo-a" });
-      const validCheckpoint = await readFile(checkpointPath, "utf8");
+      let validCheckpoint = await readFile(checkpointPath, "utf8");
+
+      const missingCheckpointBefore = (await store.getStoreInfo()).eventCount;
+      await rm(checkpointPath, { force: true });
+      const missingCheckpointRecovery = await runRuntimeLiveSidecarOnce({ sourcePath, target: store, checkpointPath, scope: "repo-a" });
+      const missingCheckpointAfter = (await store.getStoreInfo()).eventCount;
+      scenarios.push({
+        scenario: "missing_checkpoint_repaired_without_duplicate_events",
+        passed: missingCheckpointBefore === missingCheckpointAfter
+          && missingCheckpointRecovery.apply_summary.nodes.applied === 0
+          && missingCheckpointRecovery.apply_summary.nodes.unchanged === 1,
+        expected_error: null,
+        event_count_before: missingCheckpointBefore,
+        event_count_after: missingCheckpointAfter,
+      });
+
+      const changedBefore = (await store.getStoreInfo()).eventCount;
+      await rm(checkpointPath, { force: true });
+      updateRuntimeNodeSummary(sourcePath, "runtime-current", "Use src/runtime.ts after the updated verifier passed.");
+      const changedRecovery = await runRuntimeLiveSidecarOnce({ sourcePath, target: store, checkpointPath, scope: "repo-a" });
+      const changedAfter = (await store.getStoreInfo()).eventCount;
+      const changedNode = await store.getNode("repo-a", "runtime-current");
+      scenarios.push({
+        scenario: "missing_checkpoint_still_applies_changed_evidence",
+        passed: changedAfter === changedBefore + 1
+          && changedRecovery.apply_summary.nodes.applied === 1
+          && changedRecovery.apply_summary.nodes.unchanged === 0
+          && changedNode?.summary === "Use src/runtime.ts after the updated verifier passed.",
+        expected_error: null,
+        event_count_before: changedBefore,
+        event_count_after: changedAfter,
+      });
+
+      validCheckpoint = await readFile(checkpointPath, "utf8");
       insertRuntimeNode(sourcePath, "runtime-new", "This row must not mirror while checkpoint is unsafe.", "2026-06-02T00:00:00.000Z");
 
       const corruptLockPath = join(tempDir, "corrupt-checkpoint.lock");
