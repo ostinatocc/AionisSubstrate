@@ -57,6 +57,7 @@ type CaseReport = RuntimeScopeCandidate & {
     nodes_imported: number;
     relations_imported: number;
     feedback_imported: number;
+    feedback_slot_nodes_imported: number;
     decisions_imported: number;
     warnings_count: number;
   };
@@ -116,6 +117,7 @@ type RealProjectFlowReport = {
     total_nodes_imported: number;
     total_relations_imported: number;
     total_feedback_imported: number;
+    total_feedback_slot_nodes_imported: number;
     total_decisions_imported: number;
   };
   cases: CaseReport[];
@@ -282,6 +284,45 @@ function summarizeContext(context: AionisCompiledContext): ContextSummary {
   };
 }
 
+function slotsHaveRuntimeFeedback(slots: Record<string, unknown>): boolean {
+  const positive = Number(slots.feedback_positive ?? 0);
+  const negative = Number(slots.feedback_negative ?? 0);
+  return (Number.isFinite(positive) && positive > 0)
+    || (Number.isFinite(negative) && negative > 0)
+    || typeof slots.last_feedback_at === "string"
+    || typeof slots.feedback_learning_control_guide_trace_id === "string";
+}
+
+function contextNodeIds(context: AionisCompiledContext): Set<string> {
+  return new Set([
+    ...context.use_now,
+    ...context.inspect_before_use,
+    ...context.do_not_use,
+    ...context.rehydrate,
+  ].map((node) => node.id));
+}
+
+function countImportedRuntimeFeedbackSlotNodes(sourcePath: string, scope: string, context: AionisCompiledContext): number {
+  const importedIds = contextNodeIds(context);
+  if (importedIds.size === 0) return 0;
+  const db = new DatabaseSync(sourcePath, { readOnly: true });
+  try {
+    if (!tableExists(db, "lite_memory_nodes")) return 0;
+    const rows = db.prepare("SELECT id, slots_json FROM lite_memory_nodes WHERE scope = ?").all(scope) as Array<{ id: string; slots_json: string }>;
+    return rows.filter((row) => {
+      if (!importedIds.has(row.id)) return false;
+      try {
+        const parsed = JSON.parse(row.slots_json) as unknown;
+        return !!parsed && typeof parsed === "object" && !Array.isArray(parsed) && slotsHaveRuntimeFeedback(parsed as Record<string, unknown>);
+      } catch {
+        return false;
+      }
+    }).length;
+  } finally {
+    db.close();
+  }
+}
+
 function contextEquivalent(left: ContextSummary, right: ContextSummary): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -332,10 +373,12 @@ async function runCase(candidate: RuntimeScopeCandidate, keepTemp: boolean): Pro
       checkpointPath,
       scope: candidate.scope,
     });
-    const contextBeforeBackup = summarizeContext(await store.previewContext({
+    const compiledBeforeBackup = await store.previewContext({
       scope: candidate.scope,
       query: "continue the current project flow",
-    }));
+    });
+    const contextBeforeBackup = summarizeContext(compiledBeforeBackup);
+    const feedbackSlotNodesImported = countImportedRuntimeFeedbackSlotNodes(candidate.source_path, candidate.scope, compiledBeforeBackup);
     const backup = await exportAionisSubstrateBackup(store, { createdAt: "2026-06-27T00:00:00.000Z" });
     const verification = verifyAionisSubstrateBackup(backup);
     await store.close();
@@ -374,6 +417,7 @@ async function runCase(candidate: RuntimeScopeCandidate, keepTemp: boolean): Pro
         nodes_imported: first.import_summary.nodesImported,
         relations_imported: first.import_summary.relationsImported,
         feedback_imported: first.import_summary.feedbackImported,
+        feedback_slot_nodes_imported: feedbackSlotNodesImported,
         decisions_imported: first.import_summary.decisionsImported,
         warnings_count: first.import_summary.warnings.length,
       },
@@ -416,6 +460,7 @@ function markdown(report: RealProjectFlowReport): string {
     `- Total nodes imported: ${report.summary.total_nodes_imported}`,
     `- Total relations imported: ${report.summary.total_relations_imported}`,
     `- Total feedback imported: ${report.summary.total_feedback_imported}`,
+    `- Total feedback-slot nodes imported: ${report.summary.total_feedback_slot_nodes_imported}`,
     `- Total decisions imported: ${report.summary.total_decisions_imported}`,
     "",
     "## Gate Results",
@@ -504,6 +549,7 @@ async function main(): Promise<void> {
       total_nodes_imported: cases.reduce((sum, item) => sum + item.import_summary.nodes_imported, 0),
       total_relations_imported: cases.reduce((sum, item) => sum + item.import_summary.relations_imported, 0),
       total_feedback_imported: cases.reduce((sum, item) => sum + item.import_summary.feedback_imported, 0),
+      total_feedback_slot_nodes_imported: cases.reduce((sum, item) => sum + item.import_summary.feedback_slot_nodes_imported, 0),
       total_decisions_imported: cases.reduce((sum, item) => sum + item.import_summary.decisions_imported, 0),
     },
     cases,
@@ -528,6 +574,7 @@ async function main(): Promise<void> {
     total_nodes_imported: report.summary.total_nodes_imported,
     total_relations_imported: report.summary.total_relations_imported,
     total_feedback_imported: report.summary.total_feedback_imported,
+    total_feedback_slot_nodes_imported: report.summary.total_feedback_slot_nodes_imported,
     total_decisions_imported: report.summary.total_decisions_imported,
   }, null, 2));
   if (!report.summary.passed) process.exitCode = 1;
