@@ -4,6 +4,78 @@ This document records public-package verification runs for released `@aionis/sub
 
 The purpose is narrow: prove that the published npm package can be installed from the registry and can bridge real Aionis Runtime Lite SQLite sources into isolated Substrate stores without mutating Runtime source data.
 
+## 0.1.9
+
+Release date: 2026-06-27
+
+Package checked from npm registry:
+
+```bash
+npm view @aionis/substrate version
+npm view @aionis/substrate@0.1.9 dist-tags version --json
+```
+
+Result:
+
+```json
+{
+  "latest": "0.1.9",
+  "version": "0.1.9"
+}
+```
+
+Published CLI smoke:
+
+```bash
+npx --yes @aionis/substrate@latest --help
+```
+
+Result:
+
+```text
+Aionis Substrate CLI
+```
+
+Registry install smoke:
+
+```bash
+npm run -s check:registry-install
+```
+
+Result:
+
+```json
+{"ok":true,"package":"@aionis/substrate@0.1.9"}
+```
+
+Published README command check:
+
+```bash
+npm view @aionis/substrate@0.1.9 readme --silent
+```
+
+Relevant published README lines now use the scoped package entrypoint:
+
+```text
+npx @aionis/substrate@latest --help
+npm exec aionis-substrate -- --help
+npx @aionis/substrate@latest mirror-runtime ...
+```
+
+What this run proves:
+
+- the published npm `latest` tag points to `0.1.9`;
+- users can invoke the package through `npx @aionis/substrate@latest`;
+- the published README no longer points users at the nonexistent
+  `aionis-substrate` npm package name;
+- the registry install smoke passes from a fresh temporary project.
+
+What this run does not claim:
+
+- it does not change Runtime guide/admission behavior;
+- it does not make Substrate a Runtime storage replacement;
+- it does not add hosted/cloud behavior.
+
 ## 0.1.7
 
 Release date: 2026-06-27

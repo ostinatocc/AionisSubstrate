@@ -107,12 +107,12 @@ Hosts can use this to keep document-side and query-side embeddings aligned acros
 Substrate can mirror Aionis Runtime Lite SQLite into a separate store:
 
 ```bash
-npx aionis-substrate import-runtime-snapshot \
+npx @aionis/substrate@latest import-runtime-snapshot \
   --source ./runtime.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite
 
-npx aionis-substrate mirror-runtime \
+npx @aionis/substrate@latest mirror-runtime \
   --source ./runtime.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -123,7 +123,7 @@ The bridge reads Runtime evidence and writes an external Substrate store. Runtim
 
 ## Release-Level Guarantees
 
-For `@aionis/substrate@0.1.8`:
+For `@aionis/substrate@0.1.9`:
 
 - file and SQLite adapters preserve the same admission buckets for the same evidence;
 - invalid writes do not persist partial events;

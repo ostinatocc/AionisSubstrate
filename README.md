@@ -9,7 +9,7 @@ Aionis Runtime can use this layer as a durable governed memory substrate. Agents
 ## Status
 
 - Package: `@aionis/substrate`
-- Version: `0.1.8`
+- Version: `0.1.9`
 - Runtime: Node 24+
 - License: Apache-2.0
 - Current adapters: file store and SQLite
@@ -26,26 +26,26 @@ npm install @aionis/substrate
 Run the published CLI without adding a dependency:
 
 ```bash
-npx @aionis/substrate --help
+npx @aionis/substrate@latest --help
 ```
 
 After installing into a project:
 
 ```bash
-npx aionis-substrate --help
+npm exec aionis-substrate -- --help
 ```
 
 Common CLI operations:
 
 ```bash
-npx aionis-substrate inspect --adapter sqlite --path ./substrate.sqlite --scope repo-a
-npx aionis-substrate preview-context --adapter sqlite --path ./substrate.sqlite --scope repo-a
-npx aionis-substrate backup --adapter sqlite --path ./substrate.sqlite --output ./backup.json
-npx aionis-substrate restore-plan --input ./backup.json --adapter sqlite --path ./restored.sqlite
-npx aionis-substrate restore --adapter sqlite --path ./restored.sqlite --input ./backup.json
-npx aionis-substrate compact --adapter sqlite --path ./substrate.sqlite
-npx aionis-substrate mirror-runtime --source ./runtime.sqlite --target ./substrate.sqlite --adapter sqlite --checkpoint ./runtime-mirror-checkpoint.json --scope repo-a
-npx aionis-substrate mirror-runtime --source ./runtime.sqlite --target ./substrate.sqlite --adapter sqlite --checkpoint ./runtime-mirror-checkpoint.json --scope repo-a --watch --iterations 20 --interval-ms 5000
+npx @aionis/substrate@latest inspect --adapter sqlite --path ./substrate.sqlite --scope repo-a
+npx @aionis/substrate@latest preview-context --adapter sqlite --path ./substrate.sqlite --scope repo-a
+npx @aionis/substrate@latest backup --adapter sqlite --path ./substrate.sqlite --output ./backup.json
+npx @aionis/substrate@latest restore-plan --input ./backup.json --adapter sqlite --path ./restored.sqlite
+npx @aionis/substrate@latest restore --adapter sqlite --path ./restored.sqlite --input ./backup.json
+npx @aionis/substrate@latest compact --adapter sqlite --path ./substrate.sqlite
+npx @aionis/substrate@latest mirror-runtime --source ./runtime.sqlite --target ./substrate.sqlite --adapter sqlite --checkpoint ./runtime-mirror-checkpoint.json --scope repo-a
+npx @aionis/substrate@latest mirror-runtime --source ./runtime.sqlite --target ./substrate.sqlite --adapter sqlite --checkpoint ./runtime-mirror-checkpoint.json --scope repo-a --watch --iterations 20 --interval-ms 5000
 ```
 
 `mirror-runtime` is the product-facing Runtime sidecar entry point. It opens the
@@ -267,7 +267,7 @@ This imports real Runtime Lite SQLite scopes into isolated Substrate SQLite stor
 Runtime mirror:
 
 ```bash
-npx aionis-substrate mirror-runtime \
+npx @aionis/substrate@latest mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target /tmp/aionis-substrate.sqlite \
   --adapter sqlite \

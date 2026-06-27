@@ -16,7 +16,7 @@ primitive.
 ## Command
 
 ```bash
-npx aionis-substrate mirror-runtime \
+npx @aionis/substrate@latest mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -40,7 +40,7 @@ Use `--adapter file` when the target is a file-backed Substrate directory.
 Use `--dry-run` to report what would be applied without writing the target or checkpoint:
 
 ```bash
-npx aionis-substrate mirror-runtime \
+npx @aionis/substrate@latest mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -54,7 +54,7 @@ npx aionis-substrate mirror-runtime \
 Use `--watch` when a host wants Substrate to poll Runtime Lite repeatedly in one process:
 
 ```bash
-npx aionis-substrate mirror-runtime \
+npx @aionis/substrate@latest mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \

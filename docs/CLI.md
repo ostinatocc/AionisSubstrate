@@ -18,14 +18,14 @@ It is intentionally narrow:
 Run without installing permanently:
 
 ```bash
-npx @aionis/substrate --help
+npx @aionis/substrate@latest --help
 ```
 
 Install into a project:
 
 ```bash
 npm install @aionis/substrate
-npx aionis-substrate --help
+npm exec aionis-substrate -- --help
 ```
 
 The CLI requires Node 24+.
@@ -35,18 +35,18 @@ The CLI requires Node 24+.
 All store commands use explicit adapter and path arguments:
 
 ```bash
-npx aionis-substrate inspect --adapter sqlite --path ./substrate.sqlite --scope repo-a
-npx aionis-substrate preview-context --adapter sqlite --path ./substrate.sqlite --scope repo-a --query "continue runtime work"
-npx aionis-substrate backup --adapter sqlite --path ./substrate.sqlite --output ./substrate-backup.json
-npx aionis-substrate restore-plan --input ./substrate-backup.json --adapter sqlite --path ./restored.sqlite
-npx aionis-substrate restore --adapter sqlite --path ./restored.sqlite --input ./substrate-backup.json
-npx aionis-substrate compact --adapter sqlite --path ./substrate.sqlite
+npx @aionis/substrate@latest inspect --adapter sqlite --path ./substrate.sqlite --scope repo-a
+npx @aionis/substrate@latest preview-context --adapter sqlite --path ./substrate.sqlite --scope repo-a --query "continue runtime work"
+npx @aionis/substrate@latest backup --adapter sqlite --path ./substrate.sqlite --output ./substrate-backup.json
+npx @aionis/substrate@latest restore-plan --input ./substrate-backup.json --adapter sqlite --path ./restored.sqlite
+npx @aionis/substrate@latest restore --adapter sqlite --path ./restored.sqlite --input ./substrate-backup.json
+npx @aionis/substrate@latest compact --adapter sqlite --path ./substrate.sqlite
 ```
 
 Use `--adapter file` with a directory path for the file-backed adapter:
 
 ```bash
-npx aionis-substrate inspect --adapter file --path ./substrate-store --scope repo-a
+npx @aionis/substrate@latest inspect --adapter file --path ./substrate-store --scope repo-a
 ```
 
 ### Inspect
@@ -54,7 +54,7 @@ npx aionis-substrate inspect --adapter file --path ./substrate-store --scope rep
 `inspect` prints store metadata. With `--scope`, it also prints scoped counts and memory-node summaries:
 
 ```bash
-npx aionis-substrate inspect \
+npx @aionis/substrate@latest inspect \
   --adapter sqlite \
   --path ./substrate.sqlite \
   --scope repo-a
@@ -67,7 +67,7 @@ The report contract is `aionis_substrate_inspect_report_v1`.
 `preview-context` compiles the governed buckets without writing a `memory.decision.recorded` receipt:
 
 ```bash
-npx aionis-substrate preview-context \
+npx @aionis/substrate@latest preview-context \
   --adapter sqlite \
   --path ./substrate.sqlite \
   --scope repo-a \
@@ -82,7 +82,7 @@ The report includes `read_only: true` when event counts and sequence numbers are
 `backup` writes a checksum-covered event backup:
 
 ```bash
-npx aionis-substrate backup \
+npx @aionis/substrate@latest backup \
   --adapter sqlite \
   --path ./substrate.sqlite \
   --output ./substrate-backup.json
@@ -91,7 +91,7 @@ npx aionis-substrate backup \
 `restore` verifies the backup before writing an empty target:
 
 ```bash
-npx aionis-substrate restore \
+npx @aionis/substrate@latest restore \
   --adapter sqlite \
   --path ./restored.sqlite \
   --input ./substrate-backup.json
@@ -105,7 +105,7 @@ Use `--overwrite` only when replacing an existing restore target is intentional.
 writing any target:
 
 ```bash
-npx aionis-substrate restore-plan \
+npx @aionis/substrate@latest restore-plan \
   --input ./substrate-backup.json \
   --adapter sqlite \
   --path ./restored.sqlite
@@ -121,7 +121,7 @@ operator chooses to run `restore`.
 `compact` rewrites the event history into one checkpoint event without changing governed state:
 
 ```bash
-npx aionis-substrate compact \
+npx @aionis/substrate@latest compact \
   --adapter sqlite \
   --path ./substrate.sqlite
 ```
@@ -131,7 +131,7 @@ npx aionis-substrate compact \
 Use `import-runtime-snapshot` to copy Runtime Lite SQLite evidence into a separate Substrate store:
 
 ```bash
-npx aionis-substrate import-runtime-snapshot \
+npx @aionis/substrate@latest import-runtime-snapshot \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -149,7 +149,7 @@ Use `mirror-runtime` to keep a separate Substrate store in sync with Runtime Lit
 evidence without replaying unchanged rows:
 
 ```bash
-npx aionis-substrate mirror-runtime \
+npx @aionis/substrate@latest mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -166,7 +166,7 @@ learning policy.
 Use `--dry-run` to inspect the apply plan without writing the target or checkpoint:
 
 ```bash
-npx aionis-substrate mirror-runtime \
+npx @aionis/substrate@latest mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -178,7 +178,7 @@ npx aionis-substrate mirror-runtime \
 Use `--watch` for a bounded polling loop with a single-instance lock:
 
 ```bash
-npx aionis-substrate mirror-runtime \
+npx @aionis/substrate@latest mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -206,7 +206,7 @@ Use `sidecar` when you already have Runtime Lite SQLite evidence and want to che
 Snapshot parity:
 
 ```bash
-npx aionis-substrate sidecar \
+npx @aionis/substrate@latest sidecar \
   --source /path/to/aionis-runtime-lite.sqlite \
   --scope repo-a \
   --reference /path/to/runtime-guide-or-measure.json \
@@ -216,7 +216,7 @@ npx aionis-substrate sidecar \
 Reference corpus parity:
 
 ```bash
-npx aionis-substrate sidecar \
+npx @aionis/substrate@latest sidecar \
   --source-root /path/to/runtime-sqlite-root \
   --reference-root /path/to/runtime-reference-root \
   --max-source-files all \
@@ -228,7 +228,7 @@ npx aionis-substrate sidecar \
 Combined report:
 
 ```bash
-npx aionis-substrate sidecar \
+npx @aionis/substrate@latest sidecar \
   --source /path/to/aionis-runtime-lite.sqlite \
   --scope repo-a \
   --reference /path/to/runtime-guide-or-measure.json \

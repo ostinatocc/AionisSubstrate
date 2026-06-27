@@ -1,6 +1,6 @@
 # Aionis Runtime Integration Design
 
-Status: `0.1.8` integration boundary
+Status: `0.1.9` integration boundary
 
 This document defines how Aionis Substrate should be integrated with Aionis Runtime.
 
@@ -42,7 +42,7 @@ Substrate can support Runtime, but it must not silently become a second Runtime 
 Use this when a host needs to inspect or migrate an existing Runtime Lite SQLite database once.
 
 ```bash
-npx aionis-substrate import-runtime-snapshot \
+npx @aionis/substrate@latest import-runtime-snapshot \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -61,7 +61,7 @@ Contract:
 Use this when a host wants Substrate to keep a mirror of Runtime Lite evidence across repeated runs.
 
 ```bash
-npx aionis-substrate mirror-runtime \
+npx @aionis/substrate@latest mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \
@@ -83,7 +83,7 @@ Contract:
 Use this when the host wants repeated polling in one supervised process.
 
 ```bash
-npx aionis-substrate mirror-runtime \
+npx @aionis/substrate@latest mirror-runtime \
   --source /path/to/aionis-runtime-lite.sqlite \
   --target ./substrate.sqlite \
   --adapter sqlite \

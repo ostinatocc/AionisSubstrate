@@ -4,6 +4,14 @@ All notable changes to Aionis Substrate are documented here.
 
 ## Unreleased
 
+## 0.1.9 - 2026-06-27
+
+### Fixed
+
+- Corrected published CLI examples to use `npx @aionis/substrate@latest ...`
+  when running without a project install.
+- Clarified installed-project CLI usage with `npm exec aionis-substrate -- ...`.
+
 ## 0.1.8 - 2026-06-27
 
 ### Added
