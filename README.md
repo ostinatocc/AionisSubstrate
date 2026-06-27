@@ -127,6 +127,8 @@ The product contract is documented in [docs/PRODUCT_CONTRACT.md](docs/PRODUCT_CO
 
 Runtime live sidecar sync is documented in [docs/RUNTIME_LIVE_SIDECAR.md](docs/RUNTIME_LIVE_SIDECAR.md).
 
+Published Runtime bridge validation is documented in the release checks section below. It installs the published npm package into a fresh temporary project, reads a real Runtime Lite SQLite source, writes only separate Substrate target stores, and verifies snapshot/live parity plus checkpoint idempotency.
+
 Runtime Zvec candidate-index validation is documented in [docs/RUNTIME_ZVEC_CANDIDATE_INDEX.md](docs/RUNTIME_ZVEC_CANDIDATE_INDEX.md).
 
 Zvec scale and maintenance validation is documented in [docs/ZVEC_SCALE_MAINTENANCE.md](docs/ZVEC_SCALE_MAINTENANCE.md).
@@ -375,9 +377,12 @@ After publishing to npm, run the registry package checks:
 ```bash
 npm run check:registry-install
 npm run check:published-runtime-smoke
+AIONIS_RUNTIME_SQLITE_SOURCE=/path/to/aionis-lite.sqlite npm run check:published-runtime-bridge
 ```
 
 These commands install `@aionis/substrate@<package.json version>` from the npm registry into a fresh temporary project. `check:published-runtime-smoke` also creates a Runtime Lite SQLite fixture and verifies published-package snapshot import into a separate Substrate store.
+
+`check:published-runtime-bridge` is the real Runtime bridge gate. It reads the Runtime Lite SQLite source passed through `AIONIS_RUNTIME_SQLITE_SOURCE`, imports it into an isolated snapshot store, runs checkpointed `live-sidecar` twice into an isolated live store, verifies the second pass does not mutate the target, verifies snapshot/live event parity, and verifies the Runtime source file was not modified.
 
 ## Scale Smoke
 
