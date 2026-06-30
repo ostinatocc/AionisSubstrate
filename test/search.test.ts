@@ -148,6 +148,53 @@ test("search without query ranks filtered nodes deterministically", async () => 
   });
 });
 
+test("search can match ordinary QA evidence fields stored in metadata", async () => {
+  await withStores(async (stores) => {
+    for (const store of [stores.file, stores.sqlite]) {
+      await store.putNode({
+        id: "qa-port-fact",
+        scope: "repo-a",
+        kind: "fact",
+        title: "Deployment fact",
+        summary: "Compact ordinary memory with structured retrieval keys.",
+        lifecycle: "active",
+        authority: "trusted",
+        confidence: 0.92,
+        metadata: {
+          answerable_facts: ["The local Aionis Runtime listens on port 3101."],
+          entities: ["Aionis Runtime", "Claude Code"],
+          aliases: ["local memory service"],
+          topic_keys: ["deployment", "ports"],
+          time_validity: {
+            current: true,
+            valid_from: "2026-06-29",
+          },
+          source_spans: [{
+            ref: "obs-1",
+            text: "Runtime URL http://127.0.0.1:3101",
+          }],
+        },
+        createdAt: "2026-06-29T00:00:00.000Z",
+        updatedAt: "2026-06-29T00:00:00.000Z",
+      });
+    }
+
+    const input = {
+      scope: "repo-a",
+      query: "local memory service port 3101",
+      lifecycle: ["active" as const],
+      authority: ["trusted" as const],
+      limit: 5,
+    };
+    const fileResults = await stores.file.searchNodes(input);
+    const sqliteResults = await stores.sqlite.searchNodes(input);
+
+    assert.equal(fileResults[0]?.node.id, "qa-port-fact");
+    assert.deepEqual(sqliteResults.map((result) => result.node.id), fileResults.map((result) => result.node.id));
+    assert.ok(fileResults[0]?.reasons.some((reason) => reason.code === "query_match"));
+  });
+});
+
 test("target file search uses exact normalized filters instead of substring leaks", async () => {
   await withStores(async (stores) => {
     await seedBoth(stores);

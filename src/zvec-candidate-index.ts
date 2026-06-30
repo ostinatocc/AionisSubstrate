@@ -12,6 +12,7 @@ import type {
   AionisMemorySearchInput,
   AionisMemorySearchReason,
 } from "./types.ts";
+import { stableMetadataText } from "./metadata-text.ts";
 
 const ZVEC_PACKAGE = "@zvec/zvec";
 const DEFAULT_COLLECTION_NAME = "aionis_substrate_candidates_v1";
@@ -115,15 +116,6 @@ function vectorHash(vector: readonly number[]): string {
   return hash.digest("hex");
 }
 
-function stableMetadataText(metadata: Record<string, unknown> | undefined): string {
-  if (!metadata) return "";
-  return Object.entries(metadata)
-    .filter(([, value]) => typeof value === "string" || typeof value === "number" || typeof value === "boolean")
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${key}:${String(value)}`)
-    .join(" ");
-}
-
 function nodeFingerprint(node: AionisMemoryNode, vector: readonly number[], embeddingModel: string): string {
   return JSON.stringify({
     id: node.id,
@@ -138,7 +130,7 @@ function nodeFingerprint(node: AionisMemoryNode, vector: readonly number[], embe
     payloadRef: node.payloadRef ?? null,
     agentId: node.agentId ?? null,
     teamId: node.teamId ?? null,
-    metadata: stableMetadataText(node.metadata),
+    metadata: stableMetadataText(node.metadata) ?? "",
     updatedAt: node.updatedAt,
     embeddingModel,
     vectorHash: vectorHash(vector),

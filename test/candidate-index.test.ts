@@ -281,6 +281,43 @@ test("candidate index health reports missing orphan and stale entries", async ()
   });
 });
 
+test("candidate index can match ordinary QA evidence fields stored in metadata", async () => {
+  const index = createMemoryCandidateIndex([
+    node({
+      id: "qa-port-fact",
+      kind: "fact",
+      title: "Deployment fact",
+      summary: "Compact ordinary memory with structured retrieval keys.",
+      metadata: {
+        answerable_facts: ["The local Aionis Runtime listens on port 3101."],
+        entities: ["Aionis Runtime", "Claude Code"],
+        aliases: ["local memory service"],
+        topic_keys: ["deployment", "ports"],
+        time_validity: { current: true, valid_from: "2026-06-29" },
+        source_spans: [{ ref: "obs-1", text: "Runtime URL http://127.0.0.1:3101" }],
+        embedding: [0.1, 0.2, 0.3],
+      },
+    }),
+    node({
+      id: "decoy",
+      kind: "fact",
+      summary: "Unrelated note about a build script.",
+      metadata: {
+        entities: ["Build Pipeline"],
+      },
+    }),
+  ]);
+
+  const results = await index.search({
+    scope: "repo-a",
+    query: "local memory service port 3101",
+    limit: 5,
+  });
+
+  assert.deepEqual(results?.map((result) => result.memoryId), ["qa-port-fact"]);
+  assert.ok(results?.[0]?.reasons.some((reason) => reason.code === "candidate_index_query_match"));
+});
+
 test("semantic candidate fusion can recover a candidate with no lexical query match", async () => {
   const fileDir = await mkdtemp(join(tmpdir(), "aionis-substrate-semantic-fusion-file-"));
   const sqliteDir = await mkdtemp(join(tmpdir(), "aionis-substrate-semantic-fusion-sqlite-"));

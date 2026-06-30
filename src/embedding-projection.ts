@@ -1,4 +1,5 @@
 import type { AionisMemoryNode, AionisMemoryNodeInput } from "./types.ts";
+import { stableMetadataText } from "./metadata-text.ts";
 
 export const AIONIS_EMBEDDING_PROJECTION_VERSION = "aionis_substrate_embedding_projection_v1";
 
@@ -15,13 +16,6 @@ export type AionisEmbeddingQueryOptions = {
   projection?: AionisEmbeddingProjectionMode;
   task?: string;
 };
-
-const VECTOR_METADATA_KEYS = new Set([
-  "embedding",
-  "embedding_vector",
-  "vector",
-  "query_vector",
-]);
 
 function normalizeText(value: string): string {
   return value
@@ -48,23 +42,6 @@ function joinList(values: readonly string[] | undefined): string | null {
   return normalized.length > 0 ? normalized.join(", ") : null;
 }
 
-function stableMetadataText(
-  metadata: Record<string, unknown> | undefined,
-  metadataKeys: AionisEmbeddingDocumentOptions["metadataKeys"] = false,
-): string | null {
-  if (!metadata) return null;
-  if (metadataKeys === false) return null;
-  const allowedKeys = Array.isArray(metadataKeys) ? new Set(metadataKeys) : null;
-  const rows = Object.entries(metadata)
-    .filter(([key, value]) =>
-      !VECTOR_METADATA_KEYS.has(key) &&
-      (allowedKeys === null || allowedKeys.has(key)) &&
-      optionalValue(value) !== null)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${key}=${optionalValue(value)}`);
-  return rows.length > 0 ? rows.join("; ") : null;
-}
-
 function line(label: string, value: unknown): string | null {
   const normalized = optionalValue(value);
   return normalized === null ? null : `${label}: ${normalized}`;
@@ -81,7 +58,11 @@ function plainDocumentText(node: AionisMemoryNode | AionisMemoryNodeInput, optio
     node.payloadRef,
     options.includeOwner ? node.agentId : null,
     options.includeOwner ? node.teamId : null,
-    stableMetadataText(node.metadata, options.metadataKeys),
+    stableMetadataText(node.metadata, {
+      metadataKeys: options.metadataKeys ?? false,
+      assignment: "=",
+      entrySeparator: "; ",
+    }),
   ].flatMap((value) => {
     const normalized = optionalValue(value);
     return normalized === null ? [] : [normalized];
@@ -108,7 +89,11 @@ export function buildAionisEmbeddingDocument(
     line("payload_ref", node.payloadRef),
     options.includeOwner ? line("agent_id", node.agentId) : null,
     options.includeOwner ? line("team_id", node.teamId) : null,
-    line("metadata", stableMetadataText(node.metadata, options.metadataKeys)),
+    line("metadata", stableMetadataText(node.metadata, {
+      metadataKeys: options.metadataKeys ?? false,
+      assignment: "=",
+      entrySeparator: "; ",
+    })),
   ].filter((value): value is string => value !== null).join("\n");
 }
 

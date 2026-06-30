@@ -67,6 +67,37 @@ test("embedding projection can include selected scalar metadata while excluding 
   assert.doesNotMatch(text, /query_vector=/);
 });
 
+test("embedding projection can include selected ordinary QA metadata fields", () => {
+  const text = buildAionisEmbeddingDocument(memory({
+    metadata: {
+      answerable_facts: ["The local Aionis Runtime listens on port 3101."],
+      entities: ["Aionis Runtime", "Claude Code"],
+      aliases: ["local memory service"],
+      topic_keys: ["deployment", "ports"],
+      time_validity: { current: true, valid_from: "2026-06-29" },
+      source_spans: [{ ref: "obs-1", text: "Runtime URL http://127.0.0.1:3101" }],
+      embedding: [0.456, 0.567, 0.678],
+      vector: [0.789, 0.891, 0.912],
+      ignored: "not selected",
+    },
+  }), {
+    metadataKeys: ["answerable_facts", "entities", "aliases", "topic_keys", "time_validity", "source_spans"],
+  });
+
+  assert.match(text, /metadata:/);
+  assert.match(text, /answerable_facts=The local Aionis Runtime listens on port 3101\./);
+  assert.match(text, /entities=Aionis Runtime/);
+  assert.match(text, /entities=Claude Code/);
+  assert.match(text, /aliases=local memory service/);
+  assert.match(text, /topic_keys=deployment/);
+  assert.match(text, /time_validity\.current=true/);
+  assert.match(text, /source_spans\.text=Runtime URL http:\/\/127\.0\.0\.1:3101/);
+  assert.doesNotMatch(text, /ignored/);
+  assert.doesNotMatch(text, /0\.456/);
+  assert.doesNotMatch(text, /0\.789/);
+  assert.doesNotMatch(text, /vector=/);
+});
+
 test("plain document projection keeps compact search text without projection labels", () => {
   const text = buildAionisEmbeddingDocument(memory(), { projection: "plain", metadataKeys: ["primitive"] });
 

@@ -6,6 +6,7 @@ import type {
   AionisMemorySearchInput,
   AionisMemorySearchReason,
 } from "./types.ts";
+import { stableMetadataText } from "./metadata-text.ts";
 
 export type AionisCandidateIndexSearchResult = {
   scope: string;
@@ -58,15 +59,6 @@ function normalizePath(value: string): string {
   return value.trim().replaceAll("\\", "/").replace(/\/+/g, "/").toLowerCase();
 }
 
-function stableMetadataText(metadata: Record<string, unknown> | undefined): string {
-  if (!metadata) return "";
-  return Object.entries(metadata)
-    .filter(([, value]) => typeof value === "string" || typeof value === "number" || typeof value === "boolean")
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${key}:${String(value)}`)
-    .join(" ");
-}
-
 function nodeSearchText(node: AionisMemoryNode): string {
   return [
     node.id,
@@ -77,7 +69,7 @@ function nodeSearchText(node: AionisMemoryNode): string {
     node.payloadRef ?? "",
     node.agentId ?? "",
     node.teamId ?? "",
-    stableMetadataText(node.metadata),
+    stableMetadataText(node.metadata) ?? "",
   ].filter(Boolean).join(" ");
 }
 
